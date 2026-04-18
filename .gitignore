@@ -15,3 +15,10 @@ venv/
 
 # Generated logs
 llm_log.txt
+
+# IDE and tool config
+.idea/
+.claude/
+
+# Temporary files
+tmp/

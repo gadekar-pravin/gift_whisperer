@@ -83,11 +83,3 @@ gift_whisperer/
 - **Agent loops forever** — `MAX_TURNS = 12` in `app.py` is a hard safety cap. Bump or lower to taste.
 - **Parse errors on `price`** — the agent sometimes fumbles `₹1,299.00 → 1299`. If so, check your system prompt or add an explicit parsing example.
 
-## Turning this into a Chrome extension (optional, later)
-
-The HTML page already works as a popup. To make it a real extension:
-1. Add a `manifest.json` (MV3) with `"action": {"default_popup": "index.html"}`.
-2. Keep Flask running locally — the extension's JS fetches `http://127.0.0.1:5000/run`.
-3. Add `"host_permissions": ["http://127.0.0.1:5000/*"]` to the manifest.
-
-For the assignment submission, the web page is more than enough.
