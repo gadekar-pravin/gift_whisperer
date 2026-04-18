@@ -701,6 +701,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+a.product-title {
+  text-decoration: none;
+  display: block;
+}
+a.product-title:hover {
+  color: var(--text-secondary);
+}
 .product-meta {
   font-size: 0.72rem;
   color: var(--text-muted);
@@ -1512,6 +1519,7 @@ function classifyResult(tc) {
           p: p.price || '',
           r: parseRating(p.rating),
           n: parseNum(p.num_ratings),
+          url: p.url || '',
           color: PALETTE[i % PALETTE.length],
           g: EMOJIS[i % EMOJIS.length],
         })),
@@ -2539,7 +2547,11 @@ function ProductsPreview({ data }) {
               {p.g}
             </div>
             <div className="product-info">
-              <div className="product-title">{p.t}</div>
+              {p.url ? (
+                <a href={p.url} target="_blank" rel="noopener noreferrer" className="product-title">{p.t}</a>
+              ) : (
+                <div className="product-title">{p.t}</div>
+              )}
               <div className="product-meta">
                 <span><span className="star">{'\u2605'}</span> {p.r > 0 ? p.r.toFixed(1) : '\u2014'}</span>
                 <span>{p.p || '\u2014'}</span>
