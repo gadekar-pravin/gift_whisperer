@@ -1208,16 +1208,14 @@ body {
   stroke-dasharray: 4 3;
 }
 .flow-edge-winner {
-  stroke-dasharray: none;
+  stroke-dasharray: 10 5;
   stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px var(--accent-border));
   animation: flowPulse 2s linear infinite;
 }
 @keyframes flowPulse {
   from { stroke-dashoffset: 0; }
   to { stroke-dashoffset: -20; }
-}
-.flow-edge-winner {
-  stroke-dasharray: 10 5;
 }
 .flow-tooltip {
   position: fixed;
@@ -1260,6 +1258,7 @@ body {
 .flow-legend-sep { width: 1px; height: 12px; background: var(--border); align-self: center; }
 .flow-legend-bar { width: 3px; height: 12px; border-radius: 1.5px; }
 .flow-type-bar { pointer-events: none; opacity: 0.85; }
+.flow-node-winner > rect:first-child { filter: drop-shadow(0 0 6px var(--accent-border)); }
 
 /* ============================================================
    Log Panel
@@ -1853,30 +1852,38 @@ function buildFlowGraph(timeline, finalData, query) {
     }
   }
 
-  // Compute positions: column-based layout
-  const colWidth = 160;
-  const nodeW = 130;
+  // Compute positions: column-based layout centered to tallest column
+  const colWidth = 170;
+  const nodeW = 140;
   const nodeH = 44;
   const padX = 40;
   const padY = 50;
+  const gap = 14;
+
+  let maxColH = 0;
+  for (const phase of FLOW_PHASES) {
+    const col = byPhase[phase];
+    if (col.length > 0) {
+      maxColH = Math.max(maxColH, col.length * nodeH + (col.length - 1) * gap);
+    }
+  }
 
   for (let pi = 0; pi < FLOW_PHASES.length; pi++) {
     const phase = FLOW_PHASES[pi];
     const col = byPhase[phase];
     const x = padX + pi * colWidth;
-    const totalH = col.length * nodeH + (col.length - 1) * 16;
-    const startY = padY + Math.max(0, (120 - totalH) / 2);
+    const totalH = col.length * nodeH + (col.length - 1) * gap;
+    const startY = padY + (maxColH - totalH) / 2;
     for (let ni = 0; ni < col.length; ni++) {
       col[ni].x = x;
-      col[ni].y = startY + ni * (nodeH + 16);
+      col[ni].y = startY + ni * (nodeH + gap);
       col[ni].w = nodeW;
       col[ni].h = nodeH;
     }
   }
 
   const svgW = padX * 2 + (FLOW_PHASES.length - 1) * colWidth + nodeW;
-  const maxNodes = Math.max(...Object.values(byPhase).map(a => a.length), 1);
-  const svgH = padY + maxNodes * (nodeH + 16) + 30;
+  const svgH = padY * 2 + maxColH;
 
   return { nodes, edges, svgW, svgH, byPhase };
 }
@@ -2334,7 +2341,7 @@ function FlowDiagram({ timeline, finalData, query, isStreaming }) {
           return (
             <g
               key={node.id}
-              className="flow-node"
+              className={'flow-node' + (node.winner ? ' flow-node-winner' : '')}
               transform={`translate(${node.x}, ${node.y})`}
               onMouseEnter={(e) => handleMouseEnter(e, node)}
               onMouseLeave={handleMouseLeave}
