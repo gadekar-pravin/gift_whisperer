@@ -370,6 +370,16 @@ def run():
     return jsonify(response)
 
 
+@app.route("/cache", methods=["DELETE"])
+def clear_cache():
+    """Remove all cached responses."""
+    count = 0
+    for f in CACHE_DIR.glob("*.json"):
+        f.unlink()
+        count += 1
+    return jsonify({"deleted": count})
+
+
 if __name__ == "__main__":
     # debug=True is fine for a course demo; disable before any public deploy.
     app.run(host="127.0.0.1", port=5000, debug=True)
