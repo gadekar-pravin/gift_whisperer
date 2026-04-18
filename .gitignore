@@ -22,3 +22,6 @@ llm_log.txt
 
 # Temporary files
 tmp/
+
+# Response cache
+.cache/

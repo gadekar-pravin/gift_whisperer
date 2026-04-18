@@ -485,6 +485,18 @@ body {
   transition: all 0.15s;
 }
 .btn-reset:hover { color: var(--text); border-color: var(--text-muted); }
+.cached-badge {
+  display: inline-block;
+  margin-left: var(--sp-sm);
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(77, 159, 255, 0.12);
+  color: var(--info);
+}
 .timeline {
   position: relative;
   padding-left: 44px;
@@ -1517,6 +1529,7 @@ function App() {
   const [history, setHistory] = useState(loadHistory);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [logData, setLogData] = useState(null);
+  const [cached, setCached] = useState(false);
   const [settings, setSettings] = useState({ theme: 'ink', hue: 340, density: 'comfortable' });
 
   useEffect(() => {
@@ -1528,20 +1541,21 @@ function App() {
     document.documentElement.style.setProperty('--accent-border', 'hsla(' + settings.hue + ', 100%, 65%, 0.3)');
   }, [settings]);
 
-  const handleSubmit = useCallback(async (q) => {
+  const handleSubmit = useCallback(async (q, { force = false } = {}) => {
     const text = (q || query).trim();
     if (!text) return;
     setView('loading');
     setCurrentQuery(text);
     setTimeline([]);
     setFinalData(null);
+    setCached(false);
     setErrorMsg('');
 
     try {
       const res = await fetch('/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: text }),
+        body: JSON.stringify({ query: text, force }),
       });
       if (!res.ok) throw new Error('Server returned ' + res.status);
       const data = await res.json();
@@ -1549,8 +1563,9 @@ function App() {
       setTimeline(tl);
       setFinalData(fd);
       setLogData(data.log || null);
+      setCached(!!data.cached);
       setView('run');
-      const updated = saveToHistory(text, tl.length);
+      saveToHistory(text, tl.length);
       setHistory(loadHistory());
     } catch (err) {
       setErrorMsg(err.message);
@@ -1565,6 +1580,7 @@ function App() {
     setTimeline([]);
     setFinalData(null);
     setLogData(null);
+    setCached(false);
     setErrorMsg('');
   };
 
@@ -1600,7 +1616,9 @@ function App() {
               timeline={timeline}
               finalData={finalData}
               logData={logData}
+              cached={cached}
               onReset={handleReset}
+              onRerun={() => handleSubmit(currentQuery, { force: true })}
             />
           )}
           {view === 'error' && (
@@ -1763,7 +1781,7 @@ function ErrorView({ message, onReset }) {
 }
 
 /* -- Run View -- */
-function RunView({ query, timeline, finalData, logData, onReset }) {
+function RunView({ query, timeline, finalData, logData, cached, onReset, onRerun }) {
   const [revealCount, setRevealCount] = useState(0);
   const [showFinal, setShowFinal] = useState(false);
   const [activeTab, setActiveTab] = useState('timeline');
@@ -1789,8 +1807,12 @@ function RunView({ query, timeline, finalData, logData, onReset }) {
     <div>
       <div className="run-header">
         <div className="run-query">{'\u201C'}{query}{'\u201D'}</div>
-        <span className="run-meta">{revealCount} of {timeline.length} steps</span>
+        <span className="run-meta">
+          {revealCount} of {timeline.length} steps
+          {cached && <span className="cached-badge">cached</span>}
+        </span>
         <button className="btn-reset" onClick={onReset}>{'\u2190'} New search</button>
+        {cached && <button className="btn-reset" onClick={onRerun}>{'\u21BB'} Re-run fresh</button>}
       </div>
       <div className="run-tabs">
         <button

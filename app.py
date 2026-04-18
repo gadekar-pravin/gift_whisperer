@@ -14,9 +14,11 @@ results) is sent to Gemini. This satisfies the assignment's context-accumulation
 requirement.
 """
 
+import hashlib
 import os
 import json
 from datetime import datetime
+from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify
 from google import genai
@@ -33,6 +35,7 @@ load_dotenv()
 MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 MAX_TURNS = 12
 LOG_FILE = "llm_log.txt"
+CACHE_DIR = Path(".cache")
 
 SYSTEM_INSTRUCTION = """You are **Gift Whisperer**, an AI agent that finds the perfect gift on Amazon India using the tools provided.
 
@@ -306,6 +309,38 @@ def _agent_result(events, log_entries):
 
 
 # ---------------------------------------------------------------------------
+# File-based response cache
+# ---------------------------------------------------------------------------
+CACHE_DIR.mkdir(exist_ok=True)
+
+
+def _cache_key(query: str) -> str:
+    """Deterministic filename from normalized query text."""
+    normalized = query.strip().lower()
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def _cache_get(query: str) -> dict | None:
+    """Return cached response dict, or None if miss."""
+    path = CACHE_DIR / f"{_cache_key(query)}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _cache_put(query: str, response: dict) -> None:
+    """Write response dict to cache."""
+    path = CACHE_DIR / f"{_cache_key(query)}.json"
+    try:
+        path.write_text(json.dumps(response, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass  # non-critical — next run will just re-fetch
+
+
+# ---------------------------------------------------------------------------
 # HTTP routes
 # ---------------------------------------------------------------------------
 @app.route("/")
@@ -315,11 +350,24 @@ def index():
 
 @app.route("/run", methods=["POST"])
 def run():
-    query = (request.json or {}).get("query", "").strip()
+    body = request.json or {}
+    query = body.get("query", "").strip()
     if not query:
         return jsonify({"turns": [{"type": "error", "error": "Empty query"}]})
+
+    force = body.get("force", False)
+
+    if not force:
+        cached = _cache_get(query)
+        if cached:
+            cached["cached"] = True
+            return jsonify(cached)
+
     result = run_agent(query)
-    return jsonify({"turns": result["events"], "log": result["log"]})
+    response = {"turns": result["events"], "log": result["log"]}
+    _cache_put(query, response)
+    response["cached"] = False
+    return jsonify(response)
 
 
 if __name__ == "__main__":
