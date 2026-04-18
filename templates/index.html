@@ -1454,7 +1454,7 @@ function loadHistory() {
 }
 
 function saveToHistory(query, turnCount) {
-  const history = loadHistory();
+  const history = loadHistory().filter(h => h.query !== query);
   const entry = {
     id: Date.now(),
     who: query.length > 50 ? query.slice(0, 47) + '...' : query,
