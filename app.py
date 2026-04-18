@@ -25,7 +25,14 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-from tools import TOOL_REGISTRY, TOOL_DECLARATIONS
+from tools import (
+    TOOL_REGISTRY,
+    TOOL_DECLARATIONS,
+    check_gemini_connectivity,
+    check_rapidapi_connectivity,
+    get_rapidapi_usage,
+    validate_tool_args,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -68,6 +75,19 @@ if not os.environ.get("RAPIDAPI_KEY"):
     raise SystemExit("Missing RAPIDAPI_KEY — copy .env.example to .env and fill it in.")
 
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+# ---------------------------------------------------------------------------
+# Connectivity pre-checks — fail fast with actionable errors
+# ---------------------------------------------------------------------------
+try:
+    check_gemini_connectivity()
+except RuntimeError as e:
+    raise SystemExit(f"Startup check failed: {e}")
+
+try:
+    check_rapidapi_connectivity()
+except RuntimeError as e:
+    raise SystemExit(f"Startup check failed: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -270,12 +290,15 @@ def run_agent_streaming(user_query: str):
             if tool_name not in TOOL_REGISTRY:
                 result = {"error": f"Unknown tool: {tool_name}"}
             else:
-                try:
-                    result = TOOL_REGISTRY[tool_name](**tool_args)
-                except TypeError as e:
-                    result = {"error": f"Bad arguments to {tool_name}: {e}"}
-                except Exception as e:
-                    result = {"error": f"{type(e).__name__}: {e}"}
+                tool_func = TOOL_REGISTRY[tool_name]
+                validation_err = validate_tool_args(tool_func, tool_args)
+                if validation_err:
+                    result = {"error": validation_err}
+                else:
+                    try:
+                        result = tool_func(**tool_args)
+                    except Exception as e:
+                        result = {"error": f"{type(e).__name__}: {e}"}
 
             turn_event["tool_calls"].append(
                 {
@@ -301,12 +324,32 @@ def run_agent_streaming(user_query: str):
             "log_entry": log_entry,
         }
 
-    # Safety fallback: max turns exceeded
+    # Safety fallback: max turns exceeded — include recent context for debugging
+    recent_summary = []
+    for c in contents[-4:]:
+        for p in c.parts or []:
+            if getattr(p, "text", None):
+                snippet = p.text.strip()[:200]
+                recent_summary.append(f"[{c.role}] {snippet}")
+            if getattr(p, "function_call", None):
+                recent_summary.append(f"[{c.role}] called {p.function_call.name}")
+            if getattr(p, "function_response", None):
+                recent_summary.append(
+                    f"[{c.role}] result from {p.function_response.name}"
+                )
+
+    api_usage = get_rapidapi_usage()
+
     yield {
         "kind": "turn",
         "event": {
             "type": "error",
             "error": f"Agent exceeded {MAX_TURNS} turns without finalizing.",
+            "diagnostics": {
+                "total_turns": MAX_TURNS,
+                "recent_activity": recent_summary,
+                "rapidapi_usage": api_usage,
+            },
         },
         "log_entry": None,
     }

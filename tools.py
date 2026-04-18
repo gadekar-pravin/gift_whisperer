@@ -9,6 +9,8 @@ Four custom tools used by the Gift Whisperer agent.
 Each tool has (a) the Python function, (b) a Gemini FunctionDeclaration schema.
 """
 
+import inspect
+import logging
 import os
 import math
 import requests
@@ -16,12 +18,154 @@ import requests
 from google import genai
 from google.genai import types
 
+log = logging.getLogger(__name__)
 
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "")
 RAPIDAPI_HOST = "real-time-amazon-data.p.rapidapi.com"
 RAPIDAPI_BASE = f"https://{RAPIDAPI_HOST}"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+
+
+# ---------------------------------------------------------------------------
+# RapidAPI rate-limit tracking
+# ---------------------------------------------------------------------------
+_rapidapi_calls_made: int = 0
+_rapidapi_limit: int | None = None  # from X-RateLimit-Limit header
+_rapidapi_remaining: int | None = None  # from X-RateLimit-Remaining header
+
+
+def get_rapidapi_usage() -> dict:
+    """Return current RapidAPI usage stats for diagnostics."""
+    return {
+        "calls_made_this_session": _rapidapi_calls_made,
+        "rate_limit": _rapidapi_limit,
+        "rate_remaining": _rapidapi_remaining,
+    }
+
+
+def _track_rapidapi_headers(response: requests.Response) -> None:
+    """Read rate-limit headers from a RapidAPI response and update tracking."""
+    global _rapidapi_calls_made, _rapidapi_limit, _rapidapi_remaining
+    _rapidapi_calls_made += 1
+
+    limit = response.headers.get("X-RateLimit-Requests-Limit") or response.headers.get(
+        "x-ratelimit-requests-limit"
+    )
+    remaining = response.headers.get(
+        "X-RateLimit-Requests-Remaining"
+    ) or response.headers.get("x-ratelimit-requests-remaining")
+
+    if limit is not None:
+        try:
+            _rapidapi_limit = int(limit)
+        except ValueError:
+            pass
+    if remaining is not None:
+        try:
+            _rapidapi_remaining = int(remaining)
+        except ValueError:
+            pass
+
+    if _rapidapi_remaining is not None and _rapidapi_remaining <= 10:
+        log.warning(
+            "RapidAPI quota low: %d requests remaining (limit %s)",
+            _rapidapi_remaining,
+            _rapidapi_limit,
+        )
+
+
+def _check_rapidapi_quota() -> str | None:
+    """Return an error string if we know quota is exhausted, else None."""
+    if _rapidapi_remaining is not None and _rapidapi_remaining <= 0:
+        return (
+            f"RapidAPI quota exhausted (limit: {_rapidapi_limit}). "
+            "Wait for the monthly reset or upgrade your plan."
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Connectivity pre-checks (called once at startup)
+# ---------------------------------------------------------------------------
+def check_gemini_connectivity() -> None:
+    """Verify Gemini API key works. Raises RuntimeError on failure."""
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not set.")
+    try:
+        test_client = genai.Client(api_key=GEMINI_API_KEY)
+        test_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents="Say OK",
+            config=types.GenerateContentConfig(
+                max_output_tokens=5,
+                temperature=0.0,
+            ),
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Gemini connectivity check failed (model={GEMINI_MODEL}): {e}"
+        ) from e
+
+
+def check_rapidapi_connectivity() -> None:
+    """Verify RapidAPI key works with a lightweight call. Raises RuntimeError on failure."""
+    if not RAPIDAPI_KEY:
+        raise RuntimeError("RAPIDAPI_KEY is not set.")
+    url = f"{RAPIDAPI_BASE}/search"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST,
+    }
+    # Cheapest possible call — 1 result for a common query.
+    params = {"query": "test", "country": "IN", "page": "1"}
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        if r.status_code == 403:
+            raise RuntimeError(
+                "RapidAPI returned 403 Forbidden — check that your RAPIDAPI_KEY is valid "
+                "and you are subscribed to the Real-Time Amazon Data API."
+            )
+        if r.status_code == 429:
+            raise RuntimeError(
+                "RapidAPI returned 429 Too Many Requests — your free-tier quota may be "
+                "exhausted. Wait for monthly reset or upgrade your plan."
+            )
+        r.raise_for_status()
+        _track_rapidapi_headers(r)
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"RapidAPI connectivity check failed: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Tool argument pre-validation
+# ---------------------------------------------------------------------------
+def validate_tool_args(func, args: dict) -> str | None:
+    """Validate args against the function's signature.
+
+    Returns an error message string if validation fails, None if OK.
+    """
+    sig = inspect.signature(func)
+    required = {
+        name
+        for name, param in sig.parameters.items()
+        if param.default is inspect.Parameter.empty
+        and param.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+    accepted = set(sig.parameters.keys())
+
+    missing = required - set(args.keys())
+    unexpected = set(args.keys()) - accepted
+
+    if missing or unexpected:
+        parts = []
+        if missing:
+            parts.append(f"missing required: {', '.join(sorted(missing))}")
+        if unexpected:
+            parts.append(f"unexpected: {', '.join(sorted(unexpected))}")
+        return f"Argument error for {func.__name__}: {'; '.join(parts)}"
+    return None
 
 
 # ===========================================================================
@@ -33,6 +177,10 @@ def search_amazon_india(
     """
     Search Amazon India. Returns up to 5 products with ASIN/title/price/rating/URL.
     """
+    quota_err = _check_rapidapi_quota()
+    if quota_err:
+        return {"error": quota_err}
+
     url = f"{RAPIDAPI_BASE}/search"
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -49,6 +197,7 @@ def search_amazon_india(
 
     try:
         r = requests.get(url, headers=headers, params=params, timeout=30)
+        _track_rapidapi_headers(r)
         r.raise_for_status()
         payload = r.json()
     except requests.exceptions.RequestException as e:
@@ -88,6 +237,10 @@ def get_product_details(asin: str) -> dict:
     """
     Get deep details for one ASIN: description, bullets, availability.
     """
+    quota_err = _check_rapidapi_quota()
+    if quota_err:
+        return {"error": quota_err}
+
     url = f"{RAPIDAPI_BASE}/product-details"
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -97,6 +250,7 @@ def get_product_details(asin: str) -> dict:
 
     try:
         r = requests.get(url, headers=headers, params=params, timeout=30)
+        _track_rapidapi_headers(r)
         r.raise_for_status()
         payload = r.json()
     except requests.exceptions.RequestException as e:
