@@ -1,0 +1,324 @@
+"""
+Four custom tools used by the Gift Whisperer agent.
+
+  1. search_amazon_india     — REAL API call (RapidAPI / Real-Time Amazon Data)
+  2. get_product_details     — REAL API call (RapidAPI / Real-Time Amazon Data)
+  3. calculate_value_score   — pure calculation
+  4. compose_gift_card_message — creative generation via a secondary Gemini call
+
+Each tool has (a) the Python function, (b) a Gemini FunctionDeclaration schema.
+"""
+
+import os
+import math
+import requests
+
+from google import genai
+from google.genai import types
+
+
+RAPIDAPI_KEY  = os.environ.get("RAPIDAPI_KEY", "")
+RAPIDAPI_HOST = "real-time-amazon-data.p.rapidapi.com"
+RAPIDAPI_BASE = f"https://{RAPIDAPI_HOST}"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+
+# ===========================================================================
+# Tool 1: search_amazon_india
+# ===========================================================================
+def search_amazon_india(keywords: str,
+                        max_price: float,
+                        min_price: float = 100) -> dict:
+    """
+    Search Amazon India. Returns up to 5 products with ASIN/title/price/rating/URL.
+    """
+    url = f"{RAPIDAPI_BASE}/search"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST,
+    }
+    params = {
+        "query":     keywords,
+        "country":   "IN",
+        "min_price": str(int(min_price)),
+        "max_price": str(int(max_price)),
+        "sort_by":   "RELEVANCE",
+        "page":      "1",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        payload = r.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Amazon search API request failed: {e}"}
+    except ValueError as e:
+        return {"error": f"Amazon search API returned non-JSON: {e}"}
+
+    products = (payload.get("data") or {}).get("products", [])[:5]
+
+    simplified = []
+    for p in products:
+        simplified.append({
+            "asin":           p.get("asin"),
+            "title":          (p.get("product_title") or "")[:180],
+            "price":          p.get("product_price"),
+            "original_price": p.get("product_original_price"),
+            "rating":         p.get("product_star_rating"),
+            "num_ratings":    p.get("product_num_ratings"),
+            "url":            p.get("product_url"),
+            "is_prime":       p.get("is_prime"),
+        })
+
+    return {
+        "keywords":       keywords,
+        "price_range":    f"₹{int(min_price)}–₹{int(max_price)}",
+        "result_count":   len(simplified),
+        "products":       simplified,
+    }
+
+
+# ===========================================================================
+# Tool 2: get_product_details
+# ===========================================================================
+def get_product_details(asin: str) -> dict:
+    """
+    Get deep details for one ASIN: description, bullets, availability.
+    """
+    url = f"{RAPIDAPI_BASE}/product-details"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": RAPIDAPI_HOST,
+    }
+    params = {"asin": asin, "country": "IN"}
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        payload = r.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": f"Product details API request failed: {e}"}
+    except ValueError as e:
+        return {"error": f"Product details API returned non-JSON: {e}"}
+
+    d = payload.get("data") or {}
+
+    about = d.get("about_product") or []
+    if isinstance(about, list):
+        about = [str(b)[:200] for b in about[:6]]
+
+    description = d.get("product_description") or ""
+    if isinstance(description, str) and len(description) > 600:
+        description = description[:600] + "…"
+
+    return {
+        "asin":          asin,
+        "title":         (d.get("product_title") or "")[:180],
+        "price":         d.get("product_price"),
+        "rating":        d.get("product_star_rating"),
+        "num_ratings":   d.get("product_num_ratings"),
+        "availability":  d.get("product_availability"),
+        "about_product": about,
+        "description":   description,
+        "url":           d.get("product_url"),
+    }
+
+
+# ===========================================================================
+# Tool 3: calculate_value_score  (pure calculation, no API)
+# ===========================================================================
+def calculate_value_score(price: float,
+                          rating: float,
+                          num_ratings: int,
+                          budget_max: float) -> dict:
+    """
+    Combine affordability, rating quality, and review volume into one score.
+    """
+    # 1) Affordability — peak at 75% of budget (good value without being cheap).
+    if price is None or price <= 0:
+        affordability = 0
+    elif price > budget_max:
+        affordability = 0
+    else:
+        pct = price / budget_max
+        affordability = max(0, 100 * (1 - abs(pct - 0.75)))
+
+    # 2) Rating quality — linear 0–5 → 0–100, unknown = 50.
+    if rating is None or rating <= 0:
+        rating_score = 50
+    else:
+        rating_score = min(100, (rating / 5.0) * 100)
+
+    # 3) Review volume — log-scale, 1000 reviews = 100.
+    if num_ratings is None or num_ratings <= 0:
+        volume_score = 20
+    else:
+        volume_score = min(100, (math.log10(num_ratings + 1) / math.log10(1001)) * 100)
+
+    overall = (affordability * 0.35) + (rating_score * 0.40) + (volume_score * 0.25)
+
+    if   overall >= 75: verdict = "Strong choice"
+    elif overall >= 60: verdict = "Good"
+    elif overall >= 45: verdict = "Mediocre"
+    else:               verdict = "Weak"
+
+    return {
+        "overall_score": round(overall, 1),
+        "breakdown": {
+            "affordability":  round(affordability, 1),
+            "rating_quality": round(rating_score, 1),
+            "review_volume":  round(volume_score, 1),
+        },
+        "weights": {"affordability": 0.35, "rating_quality": 0.40, "review_volume": 0.25},
+        "verdict": verdict,
+    }
+
+
+# ===========================================================================
+# Tool 4: compose_gift_card_message  (nested LLM call)
+# ===========================================================================
+def compose_gift_card_message(recipient_name: str,
+                              occasion: str,
+                              product_title: str,
+                              relationship: str = "friend",
+                              tone: str = "warm") -> dict:
+    """
+    Use a secondary Gemini call to write a short personalized card message.
+    """
+    if not GEMINI_API_KEY:
+        return {"error": "GEMINI_API_KEY not configured"}
+
+    prompt = f"""Write a short (3-4 sentences), {tone} handwritten-style gift card message.
+
+Recipient:    {recipient_name}
+Relationship: {relationship}
+Occasion:     {occasion}
+Gift:         {product_title}
+
+Rules:
+- Do NOT mention the price or where the gift was bought.
+- Do NOT sound like marketing copy or a greeting card cliché.
+- Feel personal and specific to the gift.
+- End with a warm sign-off line like "Love," or "With you always," — the sender will add their name below.
+
+Return ONLY the message text. No preamble, no quotes around it.
+"""
+
+    try:
+        sub_client = genai.Client(api_key=GEMINI_API_KEY)
+        response = sub_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.8),
+        )
+        message = (response.text or "").strip()
+    except Exception as e:
+        return {"error": f"Message generation failed: {e}"}
+
+    return {
+        "recipient":    recipient_name,
+        "occasion":     occasion,
+        "relationship": relationship,
+        "tone":         tone,
+        "message":      message,
+    }
+
+
+# ===========================================================================
+# Gemini function-calling schemas
+# ===========================================================================
+TOOL_DECLARATIONS = [
+    types.FunctionDeclaration(
+        name="search_amazon_india",
+        description=(
+            "Search Amazon India for real products matching English keywords within a price range. "
+            "Returns up to 5 products with ASIN, title, price (in ₹), rating, number of ratings, and URL. "
+            "Call this multiple times with different keyword strategies to explore different gift ideas "
+            "(e.g. one call for each major interest of the recipient)."
+        ),
+        parameters=types.Schema(
+            type="OBJECT",
+            properties={
+                "keywords":  types.Schema(
+                    type="STRING",
+                    description="Concrete English search keywords, e.g. 'premium yoga mat' or 'fantasy novel boxset'.",
+                ),
+                "max_price": types.Schema(
+                    type="NUMBER",
+                    description="Maximum price in INR. MUST NOT exceed the user's stated budget.",
+                ),
+                "min_price": types.Schema(
+                    type="NUMBER",
+                    description="Minimum price in INR. Defaults to 100 if not specified.",
+                ),
+            },
+            required=["keywords", "max_price"],
+        ),
+    ),
+
+    types.FunctionDeclaration(
+        name="get_product_details",
+        description=(
+            "Get detailed info for ONE Amazon India product by its ASIN. Returns description, "
+            "feature bullets, availability, and full rating. Use this on your top 2-3 candidates "
+            "AFTER you've searched — never call this before searching."
+        ),
+        parameters=types.Schema(
+            type="OBJECT",
+            properties={
+                "asin": types.Schema(
+                    type="STRING",
+                    description="Amazon Standard Identification Number from a previous search result.",
+                ),
+            },
+            required=["asin"],
+        ),
+    ),
+
+    types.FunctionDeclaration(
+        name="calculate_value_score",
+        description=(
+            "Compute a 0-100 value-for-money score combining affordability (vs budget), rating quality, "
+            "and review volume. Call this on your final 2-3 candidates to pick the winner objectively. "
+            "You MUST parse numbers from the strings returned by search — e.g. '₹1,299.00' → 1299, "
+            "'4.3 out of 5 stars' → 4.3."
+        ),
+        parameters=types.Schema(
+            type="OBJECT",
+            properties={
+                "price":       types.Schema(type="NUMBER",  description="Product price in INR as a number."),
+                "rating":      types.Schema(type="NUMBER",  description="Star rating out of 5, e.g. 4.3."),
+                "num_ratings": types.Schema(type="INTEGER", description="Number of ratings/reviews."),
+                "budget_max":  types.Schema(type="NUMBER",  description="User's maximum budget in INR."),
+            },
+            required=["price", "rating", "num_ratings", "budget_max"],
+        ),
+    ),
+
+    types.FunctionDeclaration(
+        name="compose_gift_card_message",
+        description=(
+            "Compose a short personalized gift card message. Call this EXACTLY ONCE at the very end, "
+            "after you have picked the winning product."
+        ),
+        parameters=types.Schema(
+            type="OBJECT",
+            properties={
+                "recipient_name": types.Schema(type="STRING", description="Recipient's first name."),
+                "occasion":       types.Schema(type="STRING", description="e.g. 'birthday', 'wedding', 'anniversary'."),
+                "product_title":  types.Schema(type="STRING", description="The chosen product's title."),
+                "relationship":   types.Schema(type="STRING", description="e.g. 'sister', 'best friend', 'colleague'."),
+                "tone":           types.Schema(type="STRING", description="'warm', 'playful', 'formal', etc."),
+            },
+            required=["recipient_name", "occasion", "product_title"],
+        ),
+    ),
+]
+
+
+TOOL_REGISTRY = {
+    "search_amazon_india":       search_amazon_india,
+    "get_product_details":       get_product_details,
+    "calculate_value_score":     calculate_value_score,
+    "compose_gift_card_message": compose_gift_card_message,
+}

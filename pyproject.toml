@@ -1,0 +1,16 @@
+[project]
+name = "gift-whisperer"
+version = "0.1.0"
+description = "Multi-turn AI agent for personalized gift recommendations on Amazon India"
+requires-python = ">=3.13"
+dependencies = [
+    "flask>=3.0.0",
+    "google-genai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.11",
+]

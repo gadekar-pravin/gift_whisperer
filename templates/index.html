@@ -1,0 +1,1969 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="ink" data-density="comfortable">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gift Whisperer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+/* ============================================================
+   Custom Properties & Themes
+   ============================================================ */
+:root, [data-theme="ink"] {
+  --bg: #0e0d14;
+  --surface: #16151f;
+  --surface-2: #1e1d2a;
+  --surface-3: #28273a;
+  --text: #e8e6f0;
+  --text-secondary: #b0aec0;
+  --text-muted: #706e82;
+  --accent: #ff4d8d;
+  --accent-soft: rgba(255, 77, 141, 0.12);
+  --accent-border: rgba(255, 77, 141, 0.3);
+  --success: #4dffa6;
+  --warning: #ffd84d;
+  --info: #4d9fff;
+  --border: #2a293a;
+  --border-light: #201f2c;
+  --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --font-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Monaco, Consolas, monospace;
+  --topbar-h: 56px;
+  --sidebar-w: 320px;
+  --content-max: 840px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 6px;
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+  --sp-2xl: 48px;
+  --card-bg: #faf8f4;
+  --card-text: #2a2520;
+  --card-muted: #7a7468;
+}
+[data-theme="vellum"] {
+  --bg: #1a1814;
+  --surface: #231f1a;
+  --surface-2: #2c2720;
+  --surface-3: #3a342c;
+  --text: #e8e2d8;
+  --text-secondary: #b5ae9f;
+  --text-muted: #7a7468;
+  --border: #3a342c;
+  --border-light: #2c2720;
+  --shadow: 0 2px 12px rgba(0,0,0,0.35);
+}
+[data-theme="paper"] {
+  --bg: #f5f3ee;
+  --surface: #ffffff;
+  --surface-2: #eae7e0;
+  --surface-3: #ddd9d0;
+  --text: #1a1816;
+  --text-secondary: #4a4640;
+  --text-muted: #8a8680;
+  --border: #ddd9d0;
+  --border-light: #eae7e0;
+  --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --accent-soft: rgba(255, 77, 141, 0.08);
+  --card-bg: #fff9f0;
+}
+[data-density="compact"] {
+  --sp-xs: 2px;
+  --sp-sm: 4px;
+  --sp-md: 10px;
+  --sp-lg: 16px;
+  --sp-xl: 24px;
+  --sp-2xl: 32px;
+}
+
+/* ============================================================
+   Reset & Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection { background: var(--accent); color: #fff; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ============================================================
+   Layout
+   ============================================================ */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas: "topbar topbar" "sidebar main";
+  min-height: 100vh;
+}
+.topbar-area { grid-area: topbar; }
+.sidebar-area { grid-area: sidebar; }
+.main-area {
+  grid-area: main;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-xl) var(--sp-xl) 80px;
+}
+.main-inner { width: 100%; max-width: var(--content-max); }
+
+/* ============================================================
+   Topbar
+   ============================================================ */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-lg);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  height: var(--topbar-h);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.topbar-brand svg { color: var(--accent); flex-shrink: 0; }
+.topbar-brand h1 {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.topbar-brand h1 em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+}
+.status-pill {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.status-pill.running {
+  color: var(--warning);
+  border-color: rgba(255, 216, 77, 0.3);
+  animation: pillPulse 2s ease-in-out infinite;
+}
+.status-pill.complete { color: var(--success); border-color: rgba(77, 255, 166, 0.3); }
+@keyframes pillPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+.topbar-actions { display: flex; align-items: center; gap: var(--sp-sm); }
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: all 0.15s;
+}
+.btn-icon:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--topbar-h));
+  position: sticky;
+  top: var(--topbar-h);
+}
+.sidebar-section {
+  padding: var(--sp-lg);
+  border-bottom: 1px solid var(--border-light);
+}
+.sidebar-section:last-child { border-bottom: none; flex: 1; }
+.sidebar-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-md);
+}
+.history-list { list-style: none; }
+.history-item {
+  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 2px;
+}
+.history-item:hover { background: var(--surface-2); }
+.history-who {
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.history-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: var(--sp-sm) 0;
+}
+.tool-inv-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+  padding: var(--sp-xs) 0;
+  margin-bottom: var(--sp-sm);
+}
+.tool-inv-icon {
+  font-size: 0.85rem;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.tool-inv-name {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.tool-inv-desc {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.sidebar-footer {
+  padding: var(--sp-lg);
+  border-top: 1px solid var(--border-light);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.sidebar-footer span { color: var(--text-secondary); }
+
+/* ============================================================
+   Idle View
+   ============================================================ */
+.idle-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: calc(12vh - 20px);
+}
+.hero-text {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 2.6rem;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--sp-sm);
+}
+.hero-sub {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: var(--sp-2xl);
+}
+.composer {
+  width: 100%;
+  max-width: 640px;
+  position: relative;
+}
+.composer-area {
+  width: 100%;
+  min-height: 110px;
+  padding: var(--sp-md) var(--sp-lg);
+  padding-bottom: 44px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.composer-area:focus { border-color: var(--accent); }
+.composer-area::placeholder { color: var(--text-muted); }
+.composer-footer {
+  position: absolute;
+  bottom: 10px;
+  left: var(--sp-lg);
+  right: var(--sp-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.composer-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.composer-hint kbd {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
+}
+.btn-send {
+  padding: 6px 18px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-xs);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+.btn-send:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.context-chips {
+  display: flex;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-sm);
+  flex-wrap: wrap;
+}
+.chip {
+  font-size: 0.7rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  white-space: nowrap;
+}
+.prompt-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-md);
+  width: 100%;
+  max-width: 640px;
+  margin-top: var(--sp-2xl);
+}
+.prompt-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-lg);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+.prompt-card:hover {
+  border-color: var(--accent-border);
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+.prompt-card-emoji { font-size: 1.4rem; margin-bottom: var(--sp-sm); }
+.prompt-card-title {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: var(--sp-xs);
+}
+.prompt-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ============================================================
+   Loading View
+   ============================================================ */
+.loading-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  gap: var(--sp-lg);
+}
+.loading-mark {
+  font-size: 3.5rem;
+  animation: loadPulse 2s ease-in-out infinite;
+}
+@keyframes loadPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+.loading-text {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.15rem;
+  color: var(--text-muted);
+}
+.loading-dots {
+  display: inline;
+}
+.loading-dot {
+  animation: dotFade 1.4s ease-in-out infinite;
+  opacity: 0;
+}
+.loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotFade {
+  0%, 80%, 100% { opacity: 0; }
+  40% { opacity: 1; }
+}
+
+/* ============================================================
+   Run View & Timeline
+   ============================================================ */
+.run-header {
+  margin-bottom: var(--sp-xl);
+}
+.run-query {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.3rem;
+  color: var(--text);
+  margin-bottom: var(--sp-xs);
+}
+.run-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.btn-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  margin-left: var(--sp-md);
+  transition: all 0.15s;
+}
+.btn-reset:hover { color: var(--text); border-color: var(--text-muted); }
+.timeline {
+  position: relative;
+  padding-left: 44px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 4px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.turn-block {
+  position: relative;
+  margin-bottom: var(--sp-xl);
+  animation: turnEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes turnEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.turn-node {
+  position: absolute;
+  left: -44px;
+  top: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  z-index: 1;
+}
+.turn-node.accent { border-color: var(--accent); color: var(--accent); background: var(--surface); }
+.turn-thinking {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.02rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin-bottom: var(--sp-md);
+}
+.tool-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.tool-header {
+  padding: var(--sp-sm) var(--sp-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+.tool-header:hover { background: var(--surface-2); }
+.tool-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.tool-icon { font-size: 0.85rem; }
+.tool-name {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+.tool-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.tool-duration {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.tool-chevron {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+.tool-body { padding: var(--sp-md); }
+
+/* ============================================================
+   Tool Previews
+   ============================================================ */
+/* -- Products -- */
+.products-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-md);
+}
+.products-kw {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.products-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.product-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.product-row:last-child { border-bottom: none; }
+.product-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.product-info { flex: 1; min-width: 0; }
+.product-title {
+  font-size: 0.82rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.product-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: var(--sp-md);
+  margin-top: 2px;
+}
+.product-meta .star { color: var(--warning); }
+
+/* -- Details -- */
+.details-title {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  color: var(--text);
+  margin-bottom: var(--sp-md);
+  line-height: 1.4;
+}
+.details-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+.detail-stat {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  background: var(--surface-2);
+  border-radius: var(--radius-xs);
+}
+.detail-stat .star { color: var(--warning); }
+.details-bullets {
+  list-style: none;
+  padding: 0;
+}
+.details-bullets li {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: var(--sp-xs) 0;
+  padding-left: var(--sp-md);
+  position: relative;
+  line-height: 1.5;
+}
+.details-bullets li::before {
+  content: '–';
+  position: absolute;
+  left: 0;
+  color: var(--text-muted);
+}
+
+/* -- Score -- */
+.score-preview { padding: var(--sp-sm) 0; }
+.score-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-lg);
+}
+.score-big {
+  font-family: var(--font-serif);
+  font-size: 2.8rem;
+  color: var(--text);
+  line-height: 1;
+}
+.score-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.verdict-badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.verdict-strongchoice { background: rgba(77, 255, 166, 0.12); color: var(--success); }
+.verdict-good { background: rgba(77, 159, 255, 0.12); color: var(--info); }
+.verdict-mediocre { background: rgba(255, 216, 77, 0.12); color: var(--warning); }
+.verdict-weak { background: rgba(255, 77, 77, 0.12); color: #ff5555; }
+.score-bars { margin-top: var(--sp-md); }
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+.bar-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  width: 110px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.bar-track {
+  flex: 1;
+  height: 5px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.bar-value {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  width: 30px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* -- Card Message Preview -- */
+.card-preview {
+  border-left: 3px solid var(--accent);
+  padding: var(--sp-md) var(--sp-lg);
+}
+.card-msg {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--text-secondary);
+}
+
+/* -- Error preview -- */
+.error-preview {
+  color: #ff5555;
+  font-size: 0.85rem;
+  padding: var(--sp-sm);
+  background: rgba(255, 77, 77, 0.08);
+  border-radius: var(--radius-xs);
+}
+
+/* ============================================================
+   Final Card
+   ============================================================ */
+.final-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-top: var(--sp-2xl);
+  animation: turnEnter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.final-banner {
+  background: var(--accent-soft);
+  padding: var(--sp-sm) var(--sp-lg);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.final-body { padding: var(--sp-xl); }
+.final-product {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-xl);
+  margin-bottom: var(--sp-xl);
+}
+.final-product-main { }
+.final-title {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  color: var(--text);
+  line-height: 1.3;
+  margin-bottom: var(--sp-md);
+}
+.final-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-lg);
+}
+.final-stat {
+  padding: 4px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-xs);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.final-stat strong { color: var(--text); font-weight: 600; }
+.final-stat .star { color: var(--warning); }
+.final-stat.score-stat { background: var(--accent-soft); color: var(--accent); }
+.final-why { }
+.final-why-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-sm);
+}
+.final-why-text {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.final-divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--sp-lg) 0;
+}
+
+/* -- Paper gift card -- */
+.gift-card-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-md);
+}
+.gift-card-paper {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: var(--sp-xl) var(--sp-2xl);
+  position: relative;
+  color: var(--card-text);
+}
+.gift-card-text {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.05rem;
+  line-height: 1.85;
+  color: var(--card-text);
+}
+.gift-card-meta {
+  margin-top: var(--sp-md);
+  font-size: 0.75rem;
+  color: var(--card-muted);
+}
+.final-actions {
+  display: flex;
+  gap: var(--sp-md);
+  margin-top: var(--sp-xl);
+  flex-wrap: wrap;
+}
+.btn-action {
+  padding: 8px 20px;
+  border-radius: var(--radius-xs);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+  border: none;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--surface-3); }
+
+/* -- Text-only final (fallback) -- */
+.final-text-only {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-top: var(--sp-2xl);
+  animation: turnEnter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.final-text-body { padding: var(--sp-xl); }
+.final-text-content {
+  font-size: 0.92rem;
+  color: var(--text);
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+/* ============================================================
+   Tweaks Panel
+   ============================================================ */
+.tweaks-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  animation: fadeIn 0.2s;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.tweaks-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 300px;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: var(--sp-xl);
+  animation: slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+}
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.tweaks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-xl);
+}
+.tweaks-header h3 {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 400;
+}
+.tweaks-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tweaks-section { margin-bottom: var(--sp-xl); }
+.tweaks-section label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-sm);
+}
+.tweaks-options {
+  display: flex;
+  gap: var(--sp-sm);
+}
+.tweaks-opt {
+  flex: 1;
+  padding: 6px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+.tweaks-opt:hover { color: var(--text); }
+.tweaks-opt.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.tweaks-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  outline: none;
+  margin-top: var(--sp-sm);
+}
+.tweaks-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--surface);
+}
+.tweaks-preview {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  margin-top: var(--sp-xs);
+  background: linear-gradient(to right,
+    hsl(0,100%,65%), hsl(60,100%,65%), hsl(120,100%,65%),
+    hsl(180,100%,65%), hsl(240,100%,65%), hsl(300,100%,65%), hsl(360,100%,65%));
+}
+
+/* ============================================================
+   Global Error Card
+   ============================================================ */
+.error-card {
+  background: rgba(255, 77, 77, 0.06);
+  border: 1px solid rgba(255, 77, 77, 0.2);
+  border-radius: var(--radius);
+  padding: var(--sp-xl);
+  text-align: center;
+  margin-top: var(--sp-2xl);
+}
+.error-card-icon { font-size: 2rem; margin-bottom: var(--sp-md); }
+.error-card-msg {
+  font-size: 0.9rem;
+  color: #ff5555;
+  margin-bottom: var(--sp-md);
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+.fade-in { animation: fadeIn 0.3s both; }
+.slide-up { animation: turnEnter 0.4s both; }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas: "topbar" "main";
+  }
+  .sidebar-area { display: none; }
+  .hero-text { font-size: 2rem; }
+  .prompt-cards { grid-template-columns: 1fr; }
+  .final-product { grid-template-columns: 1fr; }
+  .main-area { padding: var(--sp-lg) var(--sp-md) 60px; }
+}
+@media (max-width: 600px) {
+  html { font-size: 14px; }
+  .hero-text { font-size: 1.6rem; }
+  .composer-area { min-height: 90px; }
+  .gift-card-paper { padding: var(--sp-lg); }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+{% raw %}
+/* ============================================================
+   Constants & Helpers
+   ============================================================ */
+const { useState, useEffect, useRef, useCallback } = React;
+
+const HISTORY_KEY = 'gw_search_history';
+const PALETTE = ['#ff4d8d', '#4d9fff', '#ffd84d', '#4dffa6', '#a64dff'];
+const EMOJIS = ['\u{1F3AF}', '\u{1F4E6}', '\u{2B50}', '\u{1F381}', '\u{1F4A1}'];
+
+const TOOL_ICONS = {
+  search_amazon_india: '\u{1F50D}',
+  get_product_details: '\u{1F4CB}',
+  calculate_value_score: '\u{1F4CA}',
+  compose_gift_card_message: '\u{2709}\u{FE0F}',
+};
+const TOOL_LABELS = {
+  search_amazon_india: 'Search Amazon India',
+  get_product_details: 'Product Details',
+  calculate_value_score: 'Value Score',
+  compose_gift_card_message: 'Gift Card Message',
+};
+const SYNTH_DURATIONS = {
+  search_amazon_india: '~1.2s',
+  get_product_details: '~1.0s',
+  calculate_value_score: '<0.1s',
+  compose_gift_card_message: '~2.0s',
+};
+
+const PROMPTS = [
+  {
+    emoji: '\u{1F9D8}',
+    title: 'Yoga-loving sister',
+    desc: 'Birthday gift for someone who loves yoga and fantasy novels',
+    query: 'Gift for my sister Meera, 28, loves yoga and fantasy novels. Budget \u20B92500. It\'s her birthday next week. We\'re very close.',
+  },
+  {
+    emoji: '\u{1F4F1}',
+    title: 'Tech-savvy retiree',
+    desc: 'Retirement gift for a gadget enthusiast dad',
+    query: 'Gift for my dad Ravi, 58, tech enthusiast who just retired. He enjoys gadgets and non-fiction books. Budget \u20B93500 for his retirement.',
+  },
+  {
+    emoji: '\u{1F373}',
+    title: 'Foodie friend',
+    desc: 'Housewarming gift for a home cook',
+    query: 'Gift for my best friend Aisha, 30, passionate home cook who loves experimental cuisines. Budget \u20B92000 for her housewarming.',
+  },
+];
+
+const TOOLS_INVENTORY = [
+  { icon: '\u{1F50D}', name: 'search_amazon_india', desc: 'Search the Amazon India catalog' },
+  { icon: '\u{1F4CB}', name: 'get_product_details', desc: 'Fetch product specifications' },
+  { icon: '\u{1F4CA}', name: 'calculate_value_score', desc: 'Score value for money' },
+  { icon: '\u{2709}\u{FE0F}', name: 'compose_gift_card_message', desc: 'Write a personalized card' },
+];
+
+function parseRating(r) {
+  if (typeof r === 'number') return r;
+  if (!r) return 0;
+  const m = String(r).match(/([\d.]+)/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function parsePrice(p) {
+  if (typeof p === 'number') return p;
+  if (!p) return 0;
+  return parseFloat(String(p).replace(/[\u20B9,\s]/g, '')) || 0;
+}
+
+function parseNum(n) {
+  if (typeof n === 'number') return n;
+  if (!n) return 0;
+  return parseInt(String(n).replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+function formatNum(n) {
+  const v = parseNum(n);
+  if (v === 0) return '0';
+  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+  return String(v);
+}
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveToHistory(query, turnCount) {
+  const history = loadHistory();
+  const entry = {
+    id: Date.now(),
+    who: query.length > 50 ? query.slice(0, 47) + '...' : query,
+    meta: new Date().toLocaleDateString() + ' \u00B7 ' + turnCount + ' steps',
+    query,
+  };
+  history.unshift(entry);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 10)));
+  return history;
+}
+
+function detectChips(text) {
+  if (!text || text.length < 5) return [];
+  const chips = [];
+  const lower = text.toLowerCase();
+  const budgetMatch = text.match(/\u20B9\s*([\d,]+)/);
+  if (budgetMatch) chips.push('\u20B9' + budgetMatch[1] + ' budget');
+  const occasions = ['birthday', 'wedding', 'anniversary', 'housewarming', 'retirement', 'graduation', 'farewell'];
+  for (const o of occasions) {
+    if (lower.includes(o)) { chips.push(o[0].toUpperCase() + o.slice(1)); break; }
+  }
+  const rels = ['sister', 'brother', 'friend', 'dad', 'father', 'mom', 'mother', 'colleague', 'wife', 'husband', 'partner'];
+  for (const r of rels) {
+    if (lower.includes(r)) { chips.push(r[0].toUpperCase() + r.slice(1)); break; }
+  }
+  return chips;
+}
+
+/* ============================================================
+   Adapter Layer
+   ============================================================ */
+function classifyResult(tc) {
+  const { name, result } = tc;
+  if (!result || result.error) return { kind: 'error', error: (result && result.error) || 'Unknown error' };
+
+  switch (name) {
+    case 'search_amazon_india':
+      return {
+        kind: 'products',
+        keywords: result.keywords || '',
+        count: result.result_count || 0,
+        products: (result.products || []).map((p, i) => ({
+          asin: p.asin,
+          t: (p.title || '').slice(0, 100),
+          p: p.price || '',
+          r: parseRating(p.rating),
+          n: parseNum(p.num_ratings),
+          color: PALETTE[i % PALETTE.length],
+          g: EMOJIS[i % EMOJIS.length],
+        })),
+      };
+    case 'get_product_details':
+      return {
+        kind: 'details',
+        asin: result.asin,
+        title: result.title || '',
+        price: result.price || '',
+        rating: parseRating(result.rating),
+        numRatings: parseNum(result.num_ratings),
+        availability: result.availability || '',
+        bullets: result.about_product || [],
+        url: result.url || '',
+      };
+    case 'calculate_value_score':
+      return {
+        kind: 'score',
+        overall: result.overall_score || 0,
+        verdict: result.verdict || '',
+        breakdown: Object.entries(result.breakdown || {}).map(([k, v]) => ({
+          label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          value: v,
+        })),
+      };
+    case 'compose_gift_card_message':
+      return {
+        kind: 'card',
+        message: result.message || '',
+        recipient: result.recipient || '',
+        occasion: result.occasion || '',
+      };
+    default:
+      return { kind: 'raw', data: result };
+  }
+}
+
+function buildFinalData(finalAnswer, detailsByAsin, scores, giftCard) {
+  if (!finalAnswer) return null;
+
+  let winnerAsin = null;
+  let winnerDetails = null;
+  let winnerScore = null;
+
+  // Primary: match via compose_gift_card_message product_title
+  if (giftCard && giftCard.productTitle) {
+    const target = giftCard.productTitle.toLowerCase();
+    for (const [asin, det] of Object.entries(detailsByAsin)) {
+      if (!det.title) continue;
+      const dtl = det.title.toLowerCase();
+      if (dtl.includes(target.slice(0, 30)) || target.includes(dtl.slice(0, 30))) {
+        winnerAsin = asin;
+        winnerDetails = det;
+        break;
+      }
+    }
+    // Fuzzy word overlap fallback
+    if (!winnerDetails) {
+      const targetWords = new Set(target.split(/\s+/).filter(w => w.length > 3));
+      let bestAsin = null, bestDet = null, bestOverlap = 0;
+      for (const [asin, det] of Object.entries(detailsByAsin)) {
+        if (!det.title) continue;
+        const words = new Set(det.title.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+        let overlap = 0;
+        for (const w of targetWords) { if (words.has(w)) overlap++; }
+        const ratio = targetWords.size > 0 ? overlap / targetWords.size : 0;
+        if (ratio > bestOverlap) { bestOverlap = ratio; bestAsin = asin; bestDet = det; }
+      }
+      if (bestDet && bestOverlap > 0.25) { winnerAsin = bestAsin; winnerDetails = bestDet; }
+    }
+  }
+
+  // Fallback: highest value score
+  if (!winnerDetails && scores.length > 0) {
+    const best = scores.reduce((a, b) => (a.result.overall_score > b.result.overall_score ? a : b));
+    for (const [asin, det] of Object.entries(detailsByAsin)) {
+      const dp = parsePrice(det.price);
+      if (Math.abs(dp - best.price) < 50) { winnerAsin = asin; winnerDetails = det; break; }
+    }
+  }
+
+  // Find winner's score
+  if (winnerDetails) {
+    const wp = parsePrice(winnerDetails.price);
+    for (const s of scores) {
+      if (Math.abs(s.price - wp) < 50) { winnerScore = s.result; break; }
+    }
+  }
+
+  if (winnerDetails) {
+    return {
+      type: 'structured',
+      title: winnerDetails.title,
+      price: winnerDetails.price,
+      asin: winnerAsin,
+      rating: parseRating(winnerDetails.rating),
+      numRatings: parseNum(winnerDetails.num_ratings),
+      url: winnerDetails.url,
+      bullets: winnerDetails.about_product || [],
+      score: winnerScore ? winnerScore.overall_score : null,
+      verdict: winnerScore ? winnerScore.verdict : null,
+      giftMessage: giftCard ? giftCard.message : null,
+      recipient: giftCard ? giftCard.recipient : null,
+      occasion: giftCard ? giftCard.occasion : null,
+      whyText: finalAnswer,
+    };
+  }
+
+  return {
+    type: 'text',
+    text: finalAnswer,
+    giftMessage: giftCard ? giftCard.message : null,
+  };
+}
+
+function adaptBackendResponse(backendTurns) {
+  const timeline = [];
+  const detailsByAsin = {};
+  const scores = [];
+  let giftCard = null;
+  let finalAnswer = '';
+  let stepNum = 0;
+
+  for (const turn of backendTurns) {
+    if (turn.type === 'final') {
+      finalAnswer = turn.final_answer || '';
+      continue;
+    }
+    if (turn.type === 'error') {
+      stepNum++;
+      timeline.push({
+        stepNum,
+        thinking: turn.error,
+        tool: null,
+        args: null,
+        result: { kind: 'error', error: turn.error },
+        duration: null,
+      });
+      continue;
+    }
+
+    // tool_turn: flatten multiple tool_calls into separate timeline entries
+    const tcs = turn.tool_calls || [];
+    tcs.forEach((tc, i) => {
+      stepNum++;
+      const adapted = {
+        stepNum,
+        thinking: i === 0 ? (turn.thinking || '') : '',
+        tool: tc.name,
+        args: tc.args,
+        result: classifyResult(tc),
+        duration: SYNTH_DURATIONS[tc.name] || '~1s',
+      };
+      timeline.push(adapted);
+
+      // Accumulate for final card
+      if (tc.name === 'get_product_details' && tc.result && !tc.result.error) {
+        detailsByAsin[tc.result.asin] = tc.result;
+      }
+      if (tc.name === 'calculate_value_score' && tc.result && !tc.result.error) {
+        scores.push({ price: tc.args.price, result: tc.result });
+      }
+      if (tc.name === 'compose_gift_card_message' && tc.result && !tc.result.error) {
+        giftCard = { ...tc.result, productTitle: tc.args.product_title };
+      }
+    });
+  }
+
+  const finalData = buildFinalData(finalAnswer, detailsByAsin, scores, giftCard);
+  return { timeline, finalData };
+}
+
+/* ============================================================
+   Components
+   ============================================================ */
+
+/* -- App -- */
+function App() {
+  const [view, setView] = useState('idle'); // idle | loading | run | error
+  const [query, setQuery] = useState('');
+  const [currentQuery, setCurrentQuery] = useState('');
+  const [timeline, setTimeline] = useState([]);
+  const [finalData, setFinalData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [history, setHistory] = useState(loadHistory);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [settings, setSettings] = useState({ theme: 'ink', hue: 340, density: 'comfortable' });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', settings.theme);
+    document.documentElement.setAttribute('data-density', settings.density);
+    const hsl = 'hsl(' + settings.hue + ', 100%, 65%)';
+    document.documentElement.style.setProperty('--accent', hsl);
+    document.documentElement.style.setProperty('--accent-soft', 'hsla(' + settings.hue + ', 100%, 65%, 0.12)');
+    document.documentElement.style.setProperty('--accent-border', 'hsla(' + settings.hue + ', 100%, 65%, 0.3)');
+  }, [settings]);
+
+  const handleSubmit = useCallback(async (q) => {
+    const text = (q || query).trim();
+    if (!text) return;
+    setView('loading');
+    setCurrentQuery(text);
+    setTimeline([]);
+    setFinalData(null);
+    setErrorMsg('');
+
+    try {
+      const res = await fetch('/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text }),
+      });
+      if (!res.ok) throw new Error('Server returned ' + res.status);
+      const data = await res.json();
+      const { timeline: tl, finalData: fd } = adaptBackendResponse(data.turns || []);
+      setTimeline(tl);
+      setFinalData(fd);
+      setView('run');
+      const updated = saveToHistory(text, tl.length);
+      setHistory(loadHistory());
+    } catch (err) {
+      setErrorMsg(err.message);
+      setView('error');
+    }
+  }, [query]);
+
+  const handleReset = () => {
+    setView('idle');
+    setQuery('');
+    setCurrentQuery('');
+    setTimeline([]);
+    setFinalData(null);
+    setErrorMsg('');
+  };
+
+  const handleHistoryClick = (q) => {
+    setQuery(q);
+    handleSubmit(q);
+  };
+
+  const statusText = view === 'idle' ? 'Ready' : view === 'loading' ? 'Searching...' : view === 'run' ? 'Complete' : 'Error';
+  const statusClass = view === 'loading' ? 'running' : view === 'run' ? 'complete' : '';
+
+  return (
+    <div className="app-shell">
+      <div className="topbar-area">
+        <Topbar status={statusText} statusClass={statusClass} onTweaks={() => setTweaksOpen(true)} />
+      </div>
+      <div className="sidebar-area">
+        <Sidebar history={history} tools={TOOLS_INVENTORY} onHistoryClick={handleHistoryClick} />
+      </div>
+      <div className="main-area">
+        <div className="main-inner">
+          {view === 'idle' && (
+            <IdleView
+              query={query}
+              onQueryChange={setQuery}
+              onSubmit={handleSubmit}
+            />
+          )}
+          {view === 'loading' && <LoadingView />}
+          {view === 'run' && (
+            <RunView
+              query={currentQuery}
+              timeline={timeline}
+              finalData={finalData}
+              onReset={handleReset}
+            />
+          )}
+          {view === 'error' && (
+            <ErrorView message={errorMsg} onReset={handleReset} />
+          )}
+        </div>
+      </div>
+      {tweaksOpen && (
+        <TweaksPanel
+          settings={settings}
+          onUpdate={setSettings}
+          onClose={() => setTweaksOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* -- Topbar -- */
+function Topbar({ status, statusClass, onTweaks }) {
+  return (
+    <nav className="topbar">
+      <div className="topbar-brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="8" width="18" height="4" rx="1"/>
+          <rect x="3" y="12" width="18" height="9" rx="1"/>
+          <line x1="12" y1="8" x2="12" y2="21"/>
+          <path d="M12 8c-2-4-6-4-6-1s4 5 6 5"/>
+          <path d="M12 8c2-4 6-4 6-1s-4 5-6 5"/>
+        </svg>
+        <h1>Gift <em>Whisperer</em></h1>
+      </div>
+      <span className={'status-pill ' + statusClass}>{status}</span>
+      <div className="topbar-actions">
+        <button className="btn-icon" onClick={onTweaks} title="Appearance">{'\u2699'}</button>
+      </div>
+    </nav>
+  );
+}
+
+/* -- Sidebar -- */
+function Sidebar({ history, tools, onHistoryClick }) {
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-section">
+        <div className="sidebar-label">Recent Searches</div>
+        {history.length === 0 ? (
+          <div className="history-empty">No recent searches</div>
+        ) : (
+          <ul className="history-list">
+            {history.map(h => (
+              <li key={h.id} className="history-item" onClick={() => onHistoryClick(h.query)}>
+                <div className="history-who">{h.who}</div>
+                <div className="history-meta">{h.meta}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="sidebar-section">
+        <div className="sidebar-label">Tool Inventory</div>
+        {tools.map(t => (
+          <div key={t.name} className="tool-inv-item">
+            <span className="tool-inv-icon">{t.icon}</span>
+            <div>
+              <div className="tool-inv-name">{t.name}</div>
+              <div className="tool-inv-desc">{t.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="sidebar-footer">
+        <span>Model:</span> Gemini 2.5 Flash<br/>
+        <span>Max turns:</span> 12<br/>
+        <span>Temperature:</span> 0.3
+      </div>
+    </aside>
+  );
+}
+
+/* -- IdleView -- */
+function IdleView({ query, onQueryChange, onSubmit }) {
+  const textareaRef = useRef(null);
+  const chips = detectChips(query);
+
+  const handleKeyDown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      onSubmit();
+    }
+  };
+
+  const handlePrompt = (q) => {
+    onQueryChange(q);
+    onSubmit(q);
+  };
+
+  return (
+    <div className="idle-view">
+      <h2 className="hero-text">The gift is already out there</h2>
+      <p className="hero-sub">Describe the person, the occasion, and your budget. The agent handles the rest.</p>
+      <div className="composer">
+        <textarea
+          ref={textareaRef}
+          className="composer-area"
+          placeholder="My sister Meera turns 28 next week. She loves yoga and fantasy novels. Budget is &#x20B9;2500..."
+          value={query}
+          onChange={e => onQueryChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <div className="composer-footer">
+          <span className="composer-hint"><kbd>{'\u2318'}</kbd> + <kbd>{'\u21B5'}</kbd> to send</span>
+          <button className="btn-send" onClick={() => onSubmit()} disabled={!query.trim()}>Find Gift</button>
+        </div>
+      </div>
+      {chips.length > 0 && (
+        <div className="context-chips" style={{ maxWidth: 640, width: '100%' }}>
+          {chips.map((c, i) => <span key={i} className="chip">{c}</span>)}
+        </div>
+      )}
+      <div className="prompt-cards">
+        {PROMPTS.map((p, i) => (
+          <div key={i} className="prompt-card" onClick={() => handlePrompt(p.query)}>
+            <div className="prompt-card-emoji">{p.emoji}</div>
+            <div className="prompt-card-title">{p.title}</div>
+            <div className="prompt-card-desc">{p.desc}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* -- Loading View -- */
+function LoadingView() {
+  return (
+    <div className="loading-view">
+      <div className="loading-mark">{'\u{1F381}'}</div>
+      <div className="loading-text">
+        Searching, comparing, scoring
+        <span className="loading-dots">
+          <span className="loading-dot">.</span>
+          <span className="loading-dot">.</span>
+          <span className="loading-dot">.</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* -- Error View -- */
+function ErrorView({ message, onReset }) {
+  return (
+    <div className="error-card">
+      <div className="error-card-icon">{'\u26A0\uFE0F'}</div>
+      <div className="error-card-msg">{message}</div>
+      <button className="btn-action btn-secondary" onClick={onReset}>Try Again</button>
+    </div>
+  );
+}
+
+/* -- Run View -- */
+function RunView({ query, timeline, finalData, onReset }) {
+  const [revealCount, setRevealCount] = useState(0);
+  const [showFinal, setShowFinal] = useState(false);
+
+  useEffect(() => {
+    setRevealCount(0);
+    setShowFinal(false);
+  }, [timeline]);
+
+  useEffect(() => {
+    if (revealCount < timeline.length) {
+      const timer = setTimeout(() => setRevealCount(c => c + 1), 800);
+      return () => clearTimeout(timer);
+    } else if (finalData && !showFinal) {
+      const delay = timeline.length > 0 ? 1000 : 200;
+      const timer = setTimeout(() => setShowFinal(true), delay);
+      return () => clearTimeout(timer);
+    }
+  }, [revealCount, timeline.length, finalData, showFinal]);
+
+  return (
+    <div>
+      <div className="run-header">
+        <div className="run-query">{'\u201C'}{query}{'\u201D'}</div>
+        <span className="run-meta">{revealCount} of {timeline.length} steps</span>
+        <button className="btn-reset" onClick={onReset}>{'\u2190'} New search</button>
+      </div>
+      <div className="timeline">
+        {timeline.slice(0, revealCount).map((step, i) => (
+          <TurnBlock key={i} step={step} />
+        ))}
+      </div>
+      {showFinal && finalData && <FinalCard data={finalData} />}
+    </div>
+  );
+}
+
+/* -- TurnBlock -- */
+function TurnBlock({ step }) {
+  return (
+    <div className="turn-block">
+      <div className={'turn-node' + (step.result && step.result.kind === 'score' ? ' accent' : '')}>
+        {step.stepNum}
+      </div>
+      {step.thinking && <p className="turn-thinking">{step.thinking}</p>}
+      {step.tool && <ToolBlock step={step} />}
+      {!step.tool && step.result && step.result.kind === 'error' && (
+        <div className="error-preview">{step.result.error}</div>
+      )}
+    </div>
+  );
+}
+
+/* -- ToolBlock -- */
+function ToolBlock({ step }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <div className="tool-block">
+      <div className="tool-header" onClick={() => setExpanded(!expanded)}>
+        <div className="tool-header-left">
+          <span className="tool-icon">{TOOL_ICONS[step.tool] || '\u{1F527}'}</span>
+          <span className="tool-name">{TOOL_LABELS[step.tool] || step.tool}</span>
+        </div>
+        <div className="tool-header-right">
+          <span className="tool-duration">{step.duration}</span>
+          <span className="tool-chevron">{expanded ? '\u25BE' : '\u25B8'}</span>
+        </div>
+      </div>
+      {expanded && (
+        <div className="tool-body">
+          <ToolResult result={step.result} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -- ToolResult dispatcher -- */
+function ToolResult({ result }) {
+  switch (result.kind) {
+    case 'products': return <ProductsPreview data={result} />;
+    case 'details':  return <DetailsPreview data={result} />;
+    case 'score':    return <ScorePreview data={result} />;
+    case 'card':     return <CardPreview data={result} />;
+    case 'error':    return <div className="error-preview">{result.error}</div>;
+    case 'raw':      return <pre style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{JSON.stringify(result.data, null, 2)}</pre>;
+    default:         return null;
+  }
+}
+
+/* -- Products Preview -- */
+function ProductsPreview({ data }) {
+  return (
+    <div>
+      <div className="products-header">
+        <span className="products-kw">"{data.keywords}"</span>
+        <span className="products-count">{data.count} result{data.count !== 1 ? 's' : ''}</span>
+      </div>
+      {data.products.length === 0 ? (
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No products found</div>
+      ) : (
+        data.products.map((p, i) => (
+          <div key={i} className="product-row">
+            <div className="product-thumb" style={{ background: p.color + '18', color: p.color }}>
+              {p.g}
+            </div>
+            <div className="product-info">
+              <div className="product-title">{p.t}</div>
+              <div className="product-meta">
+                <span><span className="star">{'\u2605'}</span> {p.r > 0 ? p.r.toFixed(1) : '\u2014'}</span>
+                <span>{p.p || '\u2014'}</span>
+                <span>{formatNum(p.n)} reviews</span>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* -- Details Preview -- */
+function DetailsPreview({ data }) {
+  return (
+    <div>
+      <div className="details-title">{data.title}</div>
+      <div className="details-stats">
+        {data.price && <span className="detail-stat"><strong>{data.price}</strong></span>}
+        <span className="detail-stat"><span className="star">{'\u2605'}</span> {data.rating > 0 ? data.rating.toFixed(1) : '\u2014'}</span>
+        <span className="detail-stat">{formatNum(data.numRatings)} reviews</span>
+        {data.availability && <span className="detail-stat">{data.availability}</span>}
+      </div>
+      {data.bullets.length > 0 && (
+        <ul className="details-bullets">
+          {data.bullets.slice(0, 5).map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* -- Score Preview -- */
+function ScorePreview({ data }) {
+  const [animate, setAnimate] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setAnimate(true), 100); return () => clearTimeout(t); }, []);
+
+  const verdictClass = data.verdict
+    ? 'verdict-' + data.verdict.toLowerCase().replace(/\s+/g, '')
+    : '';
+
+  return (
+    <div className="score-preview">
+      <div className="score-top">
+        <span className="score-big">{data.overall}</span>
+        <span className="score-label">/ 100</span>
+        {data.verdict && <span className={'verdict-badge ' + verdictClass}>{data.verdict}</span>}
+      </div>
+      <div className="score-bars">
+        {data.breakdown.map((b, i) => (
+          <div key={i} className="bar-row">
+            <span className="bar-label">{b.label}</span>
+            <div className="bar-track">
+              <div className="bar-fill" style={{ width: animate ? b.value + '%' : '0%' }} />
+            </div>
+            <span className="bar-value">{b.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* -- Card Preview -- */
+function CardPreview({ data }) {
+  return (
+    <div className="card-preview">
+      <p className="card-msg">{data.message}</p>
+    </div>
+  );
+}
+
+/* -- Final Card -- */
+function FinalCard({ data }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyMessage = async () => {
+    if (data.giftMessage) {
+      try {
+        await navigator.clipboard.writeText(data.giftMessage);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {}
+    }
+  };
+
+  if (data.type === 'text') {
+    return (
+      <div className="final-text-only">
+        <div className="final-banner">{'\u{1F381}'} The agent's recommendation</div>
+        <div className="final-text-body">
+          <div className="final-text-content">{data.text}</div>
+          {data.giftMessage && (
+            <>
+              <div className="final-divider" />
+              <div className="gift-card-label">Gift card message</div>
+              <div className="gift-card-paper">
+                <p className="gift-card-text">{data.giftMessage}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Structured final
+  return (
+    <div className="final-card">
+      <div className="final-banner">{'\u{1F381}'} The agent's pick</div>
+      <div className="final-body">
+        <div className="final-product">
+          <div className="final-product-main">
+            <h3 className="final-title">{data.title}</h3>
+            <div className="final-stats">
+              {data.price && <span className="final-stat"><strong>{data.price}</strong></span>}
+              <span className="final-stat"><span className="star">{'\u2605'}</span> {data.rating > 0 ? data.rating.toFixed(1) : '\u2014'} ({formatNum(data.numRatings)})</span>
+              {data.score != null && <span className="final-stat score-stat">Score: {data.score}/100{data.verdict ? ' \u00B7 ' + data.verdict : ''}</span>}
+            </div>
+          </div>
+          <div className="final-why">
+            <div className="final-why-label">Why this one</div>
+            <div className="final-why-text">{data.whyText}</div>
+          </div>
+        </div>
+
+        {data.giftMessage && (
+          <>
+            <div className="final-divider" />
+            <div className="gift-card-label">Gift card message{data.recipient ? ' for ' + data.recipient : ''}</div>
+            <div className="gift-card-paper">
+              <p className="gift-card-text">{data.giftMessage}</p>
+              {data.occasion && <div className="gift-card-meta">For {data.occasion}{data.recipient ? ' \u00B7 To ' + data.recipient : ''}</div>}
+            </div>
+          </>
+        )}
+
+        <div className="final-actions">
+          {data.url && (
+            <a href={data.url} target="_blank" rel="noopener noreferrer" className="btn-action btn-primary">
+              Open on Amazon {'\u2197'}
+            </a>
+          )}
+          {data.giftMessage && (
+            <button className="btn-action btn-secondary" onClick={copyMessage}>
+              {copied ? 'Copied!' : 'Copy message'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -- Tweaks Panel -- */
+function TweaksPanel({ settings, onUpdate, onClose }) {
+  return (
+    <div className="tweaks-overlay" onClick={onClose}>
+      <div className="tweaks-panel" onClick={e => e.stopPropagation()}>
+        <div className="tweaks-header">
+          <h3>Appearance</h3>
+          <button className="tweaks-close" onClick={onClose}>{'\u00D7'}</button>
+        </div>
+
+        <div className="tweaks-section">
+          <label>Theme</label>
+          <div className="tweaks-options">
+            {['ink', 'vellum', 'paper'].map(t => (
+              <button
+                key={t}
+                className={'tweaks-opt' + (settings.theme === t ? ' active' : '')}
+                onClick={() => onUpdate({ ...settings, theme: t })}
+              >
+                {t[0].toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="tweaks-section">
+          <label>Accent Color</label>
+          <input
+            type="range"
+            className="tweaks-slider"
+            min="0" max="360"
+            value={settings.hue}
+            onChange={e => onUpdate({ ...settings, hue: parseInt(e.target.value) })}
+          />
+          <div className="tweaks-preview" />
+        </div>
+
+        <div className="tweaks-section">
+          <label>Density</label>
+          <div className="tweaks-options">
+            {['comfortable', 'compact'].map(d => (
+              <button
+                key={d}
+                className={'tweaks-opt' + (settings.density === d ? ' active' : '')}
+                onClick={() => onUpdate({ ...settings, density: d })}
+              >
+                {d[0].toUpperCase() + d.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Mount
+   ============================================================ */
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+{% endraw %}
+</script>
+</body>
+</html>
