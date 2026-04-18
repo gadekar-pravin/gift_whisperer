@@ -1247,6 +1247,31 @@ body {
    ============================================================ */
 .fade-in { animation: fadeIn 0.3s both; }
 .slide-up { animation: turnEnter 0.4s both; }
+.streaming-placeholder {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-lg) 0;
+  padding-left: 44px;
+  animation: fadeIn 0.3s both;
+}
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--success);
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+  animation: pillPulse 1.5s ease-in-out infinite;
+}
+.log-streaming-indicator {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: var(--sp-md);
+  text-align: center;
+}
 
 /* ============================================================
    Responsive
@@ -1611,6 +1636,9 @@ function App() {
   const [logData, setLogData] = useState(null);
   const [cached, setCached] = useState(false);
   const [settings, setSettings] = useState({ theme: 'paper', hue: 340, density: 'comfortable' });
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [runKey, setRunKey] = useState(0);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme);
@@ -1624,36 +1652,100 @@ function App() {
   const handleSubmit = useCallback(async (q, { force = false } = {}) => {
     const text = (q || query).trim();
     if (!text) return;
-    setView('loading');
+
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setCurrentQuery(text);
     setTimeline([]);
     setFinalData(null);
     setCached(false);
     setErrorMsg('');
+    setLogData(null);
+    setIsStreaming(true);
+    setRunKey(k => k + 1);
+    setView('run');
+
+    const accTurns = [];
+    const accLogTurns = [];
+    let sysInstruction = '';
+    let modelName = '';
 
     try {
-      const res = await fetch('/run', {
+      const res = await fetch('/run-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: text, force }),
+        signal: controller.signal,
       });
       if (!res.ok) throw new Error('Server returned ' + res.status);
-      const data = await res.json();
-      const { timeline: tl, finalData: fd } = adaptBackendResponse(data.turns || []);
-      setTimeline(tl);
-      setFinalData(fd);
-      setLogData(data.log || null);
-      setCached(!!data.cached);
-      setView('run');
-      saveToHistory(text, tl.length);
-      setHistory(loadHistory());
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const segments = buffer.split('\n\n');
+        buffer = segments.pop();
+
+        for (const segment of segments) {
+          for (const line of segment.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const payload = JSON.parse(line.slice(6));
+
+            if (payload.kind === 'cached') {
+              const data = payload.data;
+              const { timeline: tl, finalData: fd } = adaptBackendResponse(data.turns || []);
+              setTimeline(tl);
+              setFinalData(fd);
+              setLogData(data.log || null);
+              setCached(true);
+              setIsStreaming(false);
+              saveToHistory(text, tl.length);
+              setHistory(loadHistory());
+              return;
+            }
+
+            if (payload.kind === 'start') {
+              sysInstruction = payload.system_instruction || '';
+              modelName = payload.model || '';
+              setLogData({ system_instruction: sysInstruction, model: modelName, turns: [] });
+            }
+
+            if (payload.kind === 'turn') {
+              accTurns.push(payload.event);
+              if (payload.log_entry) accLogTurns.push(payload.log_entry);
+              const { timeline: tl, finalData: fd } = adaptBackendResponse(accTurns);
+              setTimeline([...tl]);
+              setFinalData(fd);
+              setLogData({ system_instruction: sysInstruction, model: modelName, turns: [...accLogTurns] });
+            }
+
+            if (payload.kind === 'done') {
+              setIsStreaming(false);
+              const { timeline: tl } = adaptBackendResponse(accTurns);
+              saveToHistory(text, tl.length);
+              setHistory(loadHistory());
+            }
+          }
+        }
+      }
+      setIsStreaming(false);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setErrorMsg(err.message);
       setView('error');
+      setIsStreaming(false);
     }
   }, [query]);
 
   const handleReset = () => {
+    if (abortRef.current) abortRef.current.abort();
     setView('idle');
     setQuery('');
     setCurrentQuery('');
@@ -1661,6 +1753,7 @@ function App() {
     setFinalData(null);
     setLogData(null);
     setCached(false);
+    setIsStreaming(false);
     setErrorMsg('');
   };
 
@@ -1679,8 +1772,8 @@ function App() {
     setHistory([]);
   };
 
-  const statusText = view === 'idle' ? 'Ready' : view === 'loading' ? 'Searching...' : view === 'run' ? 'Complete' : 'Error';
-  const statusClass = view === 'loading' ? 'running' : view === 'run' ? 'complete' : '';
+  const statusText = view === 'idle' ? 'Ready' : isStreaming ? 'Searching...' : view === 'run' ? 'Complete' : 'Error';
+  const statusClass = isStreaming ? 'running' : view === 'run' ? 'complete' : '';
 
   return (
     <div className="app-shell">
@@ -1708,11 +1801,13 @@ function App() {
           {view === 'loading' && <LoadingView />}
           {view === 'run' && (
             <RunView
+              key={runKey}
               query={currentQuery}
               timeline={timeline}
               finalData={finalData}
               logData={logData}
               cached={cached}
+              isStreaming={isStreaming}
               onReset={handleReset}
               onRerun={() => handleSubmit(currentQuery, { force: true })}
             />
@@ -1887,34 +1982,33 @@ function ErrorView({ message, onReset }) {
 }
 
 /* -- Run View -- */
-function RunView({ query, timeline, finalData, logData, cached, onReset, onRerun }) {
+function RunView({ query, timeline, finalData, logData, cached, isStreaming, onReset, onRerun }) {
   const [revealCount, setRevealCount] = useState(0);
   const [showFinal, setShowFinal] = useState(false);
   const [activeTab, setActiveTab] = useState('timeline');
 
   useEffect(() => {
-    setRevealCount(0);
-    setShowFinal(false);
-    setActiveTab('timeline');
-  }, [timeline]);
-
-  useEffect(() => {
     if (revealCount < timeline.length) {
-      const timer = setTimeout(() => setRevealCount(c => c + 1), 800);
+      const delay = isStreaming ? 150 : 800;
+      const timer = setTimeout(() => setRevealCount(c => c + 1), delay);
       return () => clearTimeout(timer);
     } else if (finalData && !showFinal) {
-      const delay = timeline.length > 0 ? 1000 : 200;
+      const delay = timeline.length > 0 ? (isStreaming ? 300 : 1000) : 200;
       const timer = setTimeout(() => setShowFinal(true), delay);
       return () => clearTimeout(timer);
     }
-  }, [revealCount, timeline.length, finalData, showFinal]);
+  }, [revealCount, timeline.length, finalData, showFinal, isStreaming]);
 
   return (
     <div>
       <div className="run-header">
         <div className="run-query">{'\u201C'}{query}{'\u201D'}</div>
         <span className="run-meta">
-          {revealCount} of {timeline.length} steps
+          {isStreaming ? (
+            <>Processing<span className="loading-dots"><span className="loading-dot">.</span><span className="loading-dot">.</span><span className="loading-dot">.</span></span></>
+          ) : (
+            <>{timeline.length} steps</>
+          )}
           {cached && <span className="cached-badge">cached</span>}
         </span>
         <button className="btn-reset" onClick={onReset}>{'\u2190'} New search</button>
@@ -1928,7 +2022,7 @@ function RunView({ query, timeline, finalData, logData, cached, onReset, onRerun
         <button
           className={'run-tab' + (activeTab === 'log' ? ' active' : '')}
           onClick={() => setActiveTab('log')}
-        >Log</button>
+        >Log{isStreaming && <span className="live-dot" />}</button>
       </div>
       {activeTab === 'timeline' ? (
         <>
@@ -1937,10 +2031,18 @@ function RunView({ query, timeline, finalData, logData, cached, onReset, onRerun
               <TurnBlock key={i} step={step} />
             ))}
           </div>
+          {isStreaming && revealCount >= timeline.length && (
+            <div className="streaming-placeholder">
+              <div style={{ fontSize: '1.2rem' }}>{'\u{1F381}'}</div>
+              <span style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                Agent is thinking<span className="loading-dots"><span className="loading-dot">.</span><span className="loading-dot">.</span><span className="loading-dot">.</span></span>
+              </span>
+            </div>
+          )}
           {showFinal && finalData && <FinalCard data={finalData} />}
         </>
       ) : (
-        <LogPanel logData={logData} />
+        <LogPanel logData={logData} isStreaming={isStreaming} />
       )}
     </div>
   );
@@ -2173,13 +2275,22 @@ function FinalCard({ data }) {
 }
 
 /* -- Log Panel -- */
-function LogPanel({ logData }) {
+function LogPanel({ logData, isStreaming }) {
   const [sysOpen, setSysOpen] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (isStreaming && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [logData && logData.turns && logData.turns.length, isStreaming]);
 
   if (!logData) {
     return (
       <div className="log-panel">
-        <div className="log-meta">No log data available for this run.</div>
+        <div className="log-meta">
+          {isStreaming ? 'Waiting for first response...' : 'No log data available for this run.'}
+        </div>
       </div>
     );
   }
@@ -2188,6 +2299,7 @@ function LogPanel({ logData }) {
     <div className="log-panel">
       <div className="log-meta">
         Model: {logData.model} &middot; {(logData.turns || []).length} turn{(logData.turns || []).length !== 1 ? 's' : ''}
+        {isStreaming && ' (live)'}
       </div>
 
       <div className="log-sys-block">
@@ -2205,6 +2317,12 @@ function LogPanel({ logData }) {
       {(logData.turns || []).map((turn, i) => (
         <LogTurn key={i} turn={turn} />
       ))}
+
+      {isStreaming && (
+        <div className="log-streaming-indicator" ref={bottomRef}>
+          Receiving data<span className="loading-dots"><span className="loading-dot">.</span><span className="loading-dot">.</span><span className="loading-dot">.</span></span>
+        </div>
+      )}
     </div>
   );
 }

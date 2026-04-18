@@ -20,7 +20,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -166,11 +166,13 @@ def log_turn(turn_num, contents_sent, response):
 # ---------------------------------------------------------------------------
 # The manual agent loop — the heart of the assignment
 # ---------------------------------------------------------------------------
-def run_agent(user_query: str) -> dict:
-    """
-    Returns a dict with:
-      "events" — list of per-turn events for the timeline view
-      "log"    — structured log data for the raw processing log panel
+def run_agent_streaming(user_query: str):
+    """Generator that yields per-turn events for SSE streaming.
+
+    Yields dicts with keys:
+      kind='start'  — initial metadata (system_instruction, model)
+      kind='turn'   — per-turn data (event dict + log_entry dict)
+      kind='done'   — signals stream end
     """
     log_session_start(user_query)
 
@@ -188,8 +190,11 @@ def run_agent(user_query: str) -> dict:
         temperature=0.3,
     )
 
-    events: list = []
-    log_entries: list = []
+    yield {
+        "kind": "start",
+        "system_instruction": SYSTEM_INSTRUCTION,
+        "model": MODEL_NAME,
+    }
 
     for turn_num in range(1, MAX_TURNS + 1):
         # ---- Call Gemini with ALL accumulated context ----
@@ -200,8 +205,13 @@ def run_agent(user_query: str) -> dict:
                 config=config,
             )
         except Exception as e:
-            events.append({"type": "error", "error": f"Gemini call failed: {e}"})
-            return _agent_result(events, log_entries)
+            yield {
+                "kind": "turn",
+                "event": {"type": "error", "error": f"Gemini call failed: {e}"},
+                "log_entry": None,
+            }
+            yield {"kind": "done"}
+            return
 
         log_turn(turn_num, contents, response)
 
@@ -210,13 +220,11 @@ def run_agent(user_query: str) -> dict:
         parts = candidate.content.parts or []
 
         # Snapshot log BEFORE contents is mutated further this turn
-        log_entries.append(
-            {
-                "turn": turn_num,
-                "request": [_content_to_serializable(c) for c in contents],
-                "response": [_part_to_serializable(p) for p in parts],
-            }
-        )
+        log_entry = {
+            "turn": turn_num,
+            "request": [_content_to_serializable(c) for c in contents],
+            "response": [_part_to_serializable(p) for p in parts],
+        }
 
         thought_text = ""
         function_calls = []
@@ -228,14 +236,17 @@ def run_agent(user_query: str) -> dict:
 
         # ---- No function calls → final answer ----
         if not function_calls:
-            events.append(
-                {
+            yield {
+                "kind": "turn",
+                "event": {
                     "type": "final",
                     "turn": turn_num,
                     "final_answer": thought_text.strip() or "(empty response)",
-                }
-            )
-            return _agent_result(events, log_entries)
+                },
+                "log_entry": log_entry,
+            }
+            yield {"kind": "done"}
+            return
 
         # ---- Append the model's turn (text + function_calls) to history ----
         contents.append(candidate.content)
@@ -284,15 +295,33 @@ def run_agent(user_query: str) -> dict:
         # ---- Append all tool results to history as a single user turn ----
         contents.append(types.Content(role="user", parts=function_response_parts))
 
-        events.append(turn_event)
+        yield {
+            "kind": "turn",
+            "event": turn_event,
+            "log_entry": log_entry,
+        }
 
     # Safety fallback: max turns exceeded
-    events.append(
-        {
+    yield {
+        "kind": "turn",
+        "event": {
             "type": "error",
             "error": f"Agent exceeded {MAX_TURNS} turns without finalizing.",
-        }
-    )
+        },
+        "log_entry": None,
+    }
+    yield {"kind": "done"}
+
+
+def run_agent(user_query: str) -> dict:
+    """Non-streaming wrapper — collects all events from the streaming generator."""
+    events: list = []
+    log_entries: list = []
+    for chunk in run_agent_streaming(user_query):
+        if chunk["kind"] == "turn":
+            events.append(chunk["event"])
+            if chunk.get("log_entry"):
+                log_entries.append(chunk["log_entry"])
     return _agent_result(events, log_entries)
 
 
@@ -368,6 +397,56 @@ def run():
     _cache_put(query, response)
     response["cached"] = False
     return jsonify(response)
+
+
+@app.route("/run-stream", methods=["POST"])
+def run_stream():
+    body = request.json or {}
+    query = body.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "Empty query"})
+
+    force = body.get("force", False)
+
+    if not force:
+        cached = _cache_get(query)
+        if cached:
+            cached["cached"] = True
+
+            def gen_cached():
+                yield f"data: {json.dumps({'kind': 'cached', 'data': cached}, ensure_ascii=False)}\n\n"
+
+            return Response(
+                gen_cached(),
+                mimetype="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
+    def generate():
+        all_events = []
+        all_log_entries = []
+        for chunk in run_agent_streaming(query):
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            if chunk["kind"] == "turn":
+                all_events.append(chunk["event"])
+                if chunk.get("log_entry"):
+                    all_log_entries.append(chunk["log_entry"])
+            elif chunk["kind"] == "done":
+                response_data = {
+                    "turns": all_events,
+                    "log": {
+                        "system_instruction": SYSTEM_INSTRUCTION,
+                        "model": MODEL_NAME,
+                        "turns": all_log_entries,
+                    },
+                }
+                _cache_put(query, response_data)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/cache", methods=["DELETE"])
