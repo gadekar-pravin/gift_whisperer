@@ -1155,92 +1155,54 @@ body {
 .log-panel {
   animation: fadeIn 0.3s both;
 }
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-sm);
+}
 .log-meta {
   font-size: 0.75rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  margin-bottom: var(--sp-lg);
 }
-.log-turn {
-  background: var(--surface);
+.log-copy-btn {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 4px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  margin-bottom: var(--sp-md);
-  overflow: hidden;
-}
-.log-section-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text-secondary);
   cursor: pointer;
-  user-select: none;
-  transition: background 0.15s;
-  border: none;
-  background: none;
-  width: 100%;
-  text-align: left;
-  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+.log-copy-btn:hover {
+  background: var(--surface-2);
   color: var(--text);
 }
-.log-section-toggle:hover { background: var(--surface-2); }
-.log-section-label {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.log-section-hint {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-.log-section-body {
-  padding: var(--sp-sm) var(--sp-md) var(--sp-md);
-  border-top: 1px solid var(--border-light);
-}
-.log-pre {
+.log-terminal {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.6;
-  background: var(--surface-2);
-  border-radius: var(--radius-xs);
-  padding: var(--sp-sm) var(--sp-md);
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text-secondary);
-  margin-bottom: var(--sp-sm);
-  overflow-x: auto;
-}
-.log-pre:last-child { margin-bottom: 0; }
-.log-role {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 1px 6px;
-  border-radius: 3px;
-  margin-bottom: var(--sp-xs);
-}
-.log-role-model { background: var(--accent-soft); color: var(--accent); }
-.log-role-user { background: rgba(77, 159, 255, 0.12); color: var(--info); }
-.log-fn-call { color: var(--accent); }
-.log-fn-resp { color: var(--info); }
-.log-msg-block {
-  margin-bottom: var(--sp-sm);
-  padding-bottom: var(--sp-sm);
-  border-bottom: 1px solid var(--border-light);
-}
-.log-msg-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-.log-sys-block {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  margin-bottom: var(--sp-md);
-  overflow: hidden;
+  padding: var(--sp-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  max-height: 70vh;
+  overflow-y: auto;
+  margin: 0;
 }
+.log-line-turn { color: var(--accent); font-weight: 600; }
+.log-line-system { color: var(--warning); }
+.log-line-user { color: var(--info); }
+.log-line-model { color: var(--text); }
+.log-line-fn-call { color: var(--success); }
+.log-line-fn-resp { color: var(--text-secondary); }
+.log-line-sep { color: var(--text-muted); }
 
 /* ============================================================
    Animations
@@ -1264,13 +1226,6 @@ body {
   margin-left: 6px;
   vertical-align: middle;
   animation: pillPulse 1.5s ease-in-out infinite;
-}
-.log-streaming-indicator {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  padding: var(--sp-md);
-  text-align: center;
 }
 
 /* ============================================================
@@ -1302,7 +1257,7 @@ body {
 /* ============================================================
    Constants & Helpers
    ============================================================ */
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 const HISTORY_KEY = 'gw_search_history';
 const PALETTE = ['#ff4d8d', '#4d9fff', '#ffd84d', '#4dffa6', '#a64dff'];
@@ -2274,130 +2229,119 @@ function FinalCard({ data }) {
   );
 }
 
+/* -- Build log lines helper -- */
+function buildLogLines(logData) {
+  const lines = [];
+  const push = (text, className) => lines.push({ text, className });
+
+  if (logData.system_instruction) {
+    push('=== SYSTEM INSTRUCTION ===', 'log-line-turn');
+    push(logData.system_instruction, 'log-line-system');
+    push('', null);
+  }
+
+  for (const turn of (logData.turns || [])) {
+    push('\u2550'.repeat(20) + ' TURN ' + turn.turn + ' ' + '\u2550'.repeat(20), 'log-line-turn');
+
+    if (turn.request && turn.request.length > 0) {
+      push('--- Request ---', 'log-line-sep');
+      for (const msg of turn.request) {
+        const tag = '[' + msg.role + ']';
+        for (const part of (msg.parts || [])) {
+          if (part.type === 'text') {
+            const cls = msg.role === 'user' ? 'log-line-user' : 'log-line-model';
+            push(tag + ' TEXT: ' + part.text, cls);
+          } else if (part.type === 'function_call') {
+            const argsStr = typeof part.args === 'object' ? JSON.stringify(part.args, null, 2) : String(part.args);
+            push(tag + ' FUNCTION_CALL: ' + part.name + '(' + argsStr + ')', 'log-line-fn-call');
+          } else if (part.type === 'function_response') {
+            push(tag + ' FUNCTION_RESPONSE: ' + part.name + ' \u2192 ' + part.response + (part.truncated ? ' [truncated]' : ''), 'log-line-fn-resp');
+          }
+        }
+      }
+    }
+
+    if (turn.response && turn.response.length > 0) {
+      push('--- Response ---', 'log-line-sep');
+      for (const part of turn.response) {
+        if (part.type === 'text') {
+          push('TEXT: ' + part.text, 'log-line-model');
+        } else if (part.type === 'function_call') {
+          const argsStr = typeof part.args === 'object' ? JSON.stringify(part.args, null, 2) : String(part.args);
+          push('FUNCTION_CALL: ' + part.name + '(' + argsStr + ')', 'log-line-fn-call');
+        } else if (part.type === 'function_response') {
+          push('FUNCTION_RESPONSE: ' + part.name + ' \u2192 ' + part.response + (part.truncated ? ' [truncated]' : ''), 'log-line-fn-resp');
+        }
+      }
+    }
+
+    push('', null);
+  }
+
+  const plainText = lines.map(l => l.text).join('\n');
+  return { lines, plainText };
+}
+
 /* -- Log Panel -- */
 function LogPanel({ logData, isStreaming }) {
-  const [sysOpen, setSysOpen] = useState(false);
-  const bottomRef = useRef(null);
+  const termRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+
+  const { lines, plainText } = useMemo(
+    () => logData ? buildLogLines(logData) : { lines: [], plainText: '' },
+    [logData]
+  );
 
   useEffect(() => {
-    if (isStreaming && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (isStreaming && termRef.current) {
+      termRef.current.scrollTop = termRef.current.scrollHeight;
     }
-  }, [logData && logData.turns && logData.turns.length, isStreaming]);
+  }, [lines.length, isStreaming]);
+
+  const copyLog = useCallback(() => {
+    navigator.clipboard.writeText(plainText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [plainText]);
 
   if (!logData) {
     return (
       <div className="log-panel">
-        <div className="log-meta">
-          {isStreaming ? 'Waiting for first response...' : 'No log data available for this run.'}
+        <div className="log-toolbar">
+          <span className="log-meta">
+            {isStreaming ? 'Waiting for first response...' : 'No log data available for this run.'}
+          </span>
         </div>
       </div>
     );
   }
+
+  const turnCount = (logData.turns || []).length;
 
   return (
     <div className="log-panel">
-      <div className="log-meta">
-        Model: {logData.model} &middot; {(logData.turns || []).length} turn{(logData.turns || []).length !== 1 ? 's' : ''}
-        {isStreaming && ' (live)'}
-      </div>
-
-      <div className="log-sys-block">
-        <button className="log-section-toggle" onClick={() => setSysOpen(!sysOpen)}>
-          <span className="log-section-label">System Instruction</span>
-          <span className="log-section-hint">{sysOpen ? '\u25BE' : '\u25B8'}</span>
+      <div className="log-toolbar">
+        <span className="log-meta">
+          Model: {logData.model} &middot; {turnCount} turn{turnCount !== 1 ? 's' : ''}
+          {isStreaming && ' (live)'}
+        </span>
+        <button className="log-copy-btn" onClick={copyLog}>
+          {copied ? 'Copied!' : 'Copy log'}
         </button>
-        {sysOpen && (
-          <div className="log-section-body">
-            <pre className="log-pre">{logData.system_instruction}</pre>
-          </div>
+      </div>
+      <pre className="log-terminal" ref={termRef}>
+        {lines.map((line, i) => (
+          <span key={i} className={line.className || ''}>
+            {line.text}{'\n'}
+          </span>
+        ))}
+        {isStreaming && (
+          <span className="log-line-sep">Receiving data...</span>
         )}
-      </div>
-
-      {(logData.turns || []).map((turn, i) => (
-        <LogTurn key={i} turn={turn} />
-      ))}
-
-      {isStreaming && (
-        <div className="log-streaming-indicator" ref={bottomRef}>
-          Receiving data<span className="loading-dots"><span className="loading-dot">.</span><span className="loading-dot">.</span><span className="loading-dot">.</span></span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* -- Log Turn -- */
-function LogTurn({ turn }) {
-  const [reqOpen, setReqOpen] = useState(false);
-  const [respOpen, setRespOpen] = useState(true);
-  const reqCount = (turn.request || []).length;
-
-  return (
-    <div className="log-turn">
-      <div style={{ padding: 'var(--sp-sm) var(--sp-md)', borderBottom: '1px solid var(--border-light)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600 }}>
-        Turn {turn.turn}
-      </div>
-
-      <button className="log-section-toggle" onClick={() => setReqOpen(!reqOpen)}>
-        <span className="log-section-label">Request</span>
-        <span className="log-section-hint">{reqCount} message{reqCount !== 1 ? 's' : ''} {reqOpen ? '\u25BE' : '\u25B8'}</span>
-      </button>
-      {reqOpen && (
-        <div className="log-section-body">
-          {(turn.request || []).map((msg, i) => (
-            <LogMessage key={i} msg={msg} index={i} />
-          ))}
-        </div>
-      )}
-
-      <button className="log-section-toggle" onClick={() => setRespOpen(!respOpen)}>
-        <span className="log-section-label">Response</span>
-        <span className="log-section-hint">{(turn.response || []).length} part{(turn.response || []).length !== 1 ? 's' : ''} {respOpen ? '\u25BE' : '\u25B8'}</span>
-      </button>
-      {respOpen && (
-        <div className="log-section-body">
-          {(turn.response || []).map((part, i) => (
-            <LogPart key={i} part={part} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* -- Log Message -- */
-function LogMessage({ msg, index }) {
-  const roleClass = msg.role === 'model' ? 'log-role-model' : 'log-role-user';
-  return (
-    <div className="log-msg-block">
-      <span className={'log-role ' + roleClass}>[{index}] {msg.role}</span>
-      {(msg.parts || []).map((part, i) => (
-        <LogPart key={i} part={part} />
-      ))}
-    </div>
-  );
-}
-
-/* -- Log Part -- */
-function LogPart({ part }) {
-  if (part.type === 'text') {
-    return <pre className="log-pre">TEXT: {part.text}</pre>;
-  }
-  if (part.type === 'function_call') {
-    const argsStr = typeof part.args === 'object' ? JSON.stringify(part.args, null, 2) : String(part.args);
-    return (
-      <pre className="log-pre log-fn-call">FUNCTION_CALL: {part.name}({argsStr})</pre>
-    );
-  }
-  if (part.type === 'function_response') {
-    return (
-      <pre className="log-pre log-fn-resp">
-        FUNCTION_RESPONSE: {part.name} {'\u2192'} {part.response}{part.truncated ? ' [truncated]' : ''}
       </pre>
-    );
-  }
-  return <pre className="log-pre">UNKNOWN PART</pre>;
+    </div>
+  );
 }
 
 /* -- Tweaks Panel -- */
