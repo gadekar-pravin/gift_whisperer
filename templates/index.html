@@ -1257,6 +1257,9 @@ body {
   height: 3px;
   border-radius: 2px;
 }
+.flow-legend-sep { width: 1px; height: 12px; background: var(--border); align-self: center; }
+.flow-legend-bar { width: 3px; height: 12px; border-radius: 1.5px; }
+.flow-type-bar { pointer-events: none; opacity: 0.85; }
 
 /* ============================================================
    Log Panel
@@ -1697,6 +1700,23 @@ const TOOL_TO_PHASE = {
   compose_gift_card_message: 'card',
 };
 
+const TOOL_TYPE = {
+  search_amazon_india: 'api',
+  get_product_details: 'api',
+  calculate_value_score: 'compute',
+  compose_gift_card_message: 'llm',
+};
+const TOOL_TYPE_COLORS = {
+  api:     'hsl(200, 60%, 55%)',
+  compute: 'hsl(45, 60%, 55%)',
+  llm:     'hsl(270, 55%, 60%)',
+};
+const TOOL_TYPE_LABELS = {
+  api:     'External API',
+  compute: 'Local compute',
+  llm:     'LLM call',
+};
+
 function buildFlowGraph(timeline, finalData, query) {
   const nodes = [];
   const edges = [];
@@ -1719,7 +1739,7 @@ function buildFlowGraph(timeline, finalData, query) {
     const phase = TOOL_TO_PHASE[step.tool];
     if (!phase) continue;
 
-    const node = { id: 's' + step.stepNum, phase, stepNum: step.stepNum, thinking: step.thinking || '', args: step.args, result: step.result, winner: false };
+    const node = { id: 's' + step.stepNum, phase, stepNum: step.stepNum, thinking: step.thinking || '', args: step.args, result: step.result, winner: false, toolType: TOOL_TYPE[step.tool] || null };
 
     if (phase === 'search') {
       node.label = step.args && step.args.query ? '"' + (step.args.query.length > 14 ? step.args.query.slice(0, 12) + '\u2026' : step.args.query) + '"' : 'Search';
@@ -2247,6 +2267,7 @@ function FlowDiagram({ timeline, finalData, query, isStreaming }) {
   const handleMouseEnter = (e, node) => {
     const rect = e.currentTarget.getBoundingClientRect();
     let detail = '';
+    if (node.toolType) detail += TOOL_TYPE_LABELS[node.toolType] + '\n';
     if (node.thinking) detail += node.thinking.slice(0, 120) + (node.thinking.length > 120 ? '\u2026' : '');
     if (node.args) {
       const argsStr = Object.entries(node.args).map(([k, v]) => k + ': ' + (typeof v === 'string' ? v.slice(0, 40) : v)).join(', ');
@@ -2319,6 +2340,10 @@ function FlowDiagram({ timeline, finalData, query, isStreaming }) {
               onMouseLeave={handleMouseLeave}
             >
               <rect width={node.w} height={node.h} fill={fill} stroke={stroke} />
+              {node.toolType && (
+                <rect x={1} y={6} width={3} height={node.h - 12} rx={1.5}
+                      fill={TOOL_TYPE_COLORS[node.toolType]} className="flow-type-bar" />
+              )}
               <text x={20} y={node.h / 2 + 1} dominantBaseline="middle" className="flow-node-icon">{node.icon}</text>
               <text x={38} y={node.h / 2 + 1} dominantBaseline="middle" className="flow-node-label">
                 {node.label}
@@ -2345,6 +2370,19 @@ function FlowDiagram({ timeline, finalData, query, isStreaming }) {
         <div className="flow-legend-item">
           <div className="flow-legend-swatch" style={{ background: 'var(--border)', borderTop: '1.5px dashed var(--text-muted)' }} />
           <span>Other paths</span>
+        </div>
+        <div className="flow-legend-sep" />
+        <div className="flow-legend-item">
+          <div className="flow-legend-bar" style={{ background: TOOL_TYPE_COLORS.api }} />
+          <span>External API</span>
+        </div>
+        <div className="flow-legend-item">
+          <div className="flow-legend-bar" style={{ background: TOOL_TYPE_COLORS.compute }} />
+          <span>Local compute</span>
+        </div>
+        <div className="flow-legend-item">
+          <div className="flow-legend-bar" style={{ background: TOOL_TYPE_COLORS.llm }} />
+          <span>LLM call</span>
         </div>
       </div>
     </div>
