@@ -30,7 +30,7 @@ from tools import TOOL_REGISTRY, TOOL_DECLARATIONS
 # ---------------------------------------------------------------------------
 load_dotenv()
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 MAX_TURNS = 12
 LOG_FILE = "llm_log.txt"
 
@@ -94,6 +94,44 @@ def _part_to_str(part):
     return "UNKNOWN_PART"
 
 
+def _part_to_serializable(part):
+    """Convert a types.Part into a JSON-safe dict for the frontend log panel."""
+    if getattr(part, "text", None):
+        return {"type": "text", "text": part.text.strip()}
+    if getattr(part, "function_call", None):
+        fc = part.function_call
+        try:
+            args = dict(fc.args) if fc.args else {}
+        except Exception:
+            args = str(fc.args)
+        return {"type": "function_call", "name": fc.name, "args": args}
+    if getattr(part, "function_response", None):
+        fr = part.function_response
+        try:
+            resp = dict(fr.response) if fr.response else {}
+        except Exception:
+            resp = str(fr.response)
+        resp_str = json.dumps(resp, ensure_ascii=False)
+        truncated = len(resp_str) > 2000
+        if truncated:
+            resp_str = resp_str[:2000] + f"… [{len(resp_str)} chars total]"
+        return {
+            "type": "function_response",
+            "name": fr.name,
+            "response": resp_str,
+            "truncated": truncated,
+        }
+    return {"type": "unknown"}
+
+
+def _content_to_serializable(content):
+    """Convert a types.Content into a JSON-safe dict."""
+    return {
+        "role": content.role,
+        "parts": [_part_to_serializable(p) for p in (content.parts or [])],
+    }
+
+
 def log_session_start(query):
     with open(LOG_FILE, "w", encoding="utf-8") as f:
         f.write("=" * 80 + "\n")
@@ -125,14 +163,11 @@ def log_turn(turn_num, contents_sent, response):
 # ---------------------------------------------------------------------------
 # The manual agent loop — the heart of the assignment
 # ---------------------------------------------------------------------------
-def run_agent(user_query: str) -> list:
+def run_agent(user_query: str) -> dict:
     """
-    Returns a list of per-turn events that the frontend renders.
-
-    Each event is one of:
-      { type: "tool_turn", turn, thinking, tool_calls: [{name, args, result}, ...] }
-      { type: "final",     turn, final_answer }
-      { type: "error",     error }
+    Returns a dict with:
+      "events" — list of per-turn events for the timeline view
+      "log"    — structured log data for the raw processing log panel
     """
     log_session_start(user_query)
 
@@ -151,6 +186,7 @@ def run_agent(user_query: str) -> list:
     )
 
     events: list = []
+    log_entries: list = []
 
     for turn_num in range(1, MAX_TURNS + 1):
         # ---- Call Gemini with ALL accumulated context ----
@@ -162,13 +198,22 @@ def run_agent(user_query: str) -> list:
             )
         except Exception as e:
             events.append({"type": "error", "error": f"Gemini call failed: {e}"})
-            return events
+            return _agent_result(events, log_entries)
 
         log_turn(turn_num, contents, response)
 
         # ---- Parse response parts ----
         candidate = response.candidates[0]
         parts = candidate.content.parts or []
+
+        # Snapshot log BEFORE contents is mutated further this turn
+        log_entries.append(
+            {
+                "turn": turn_num,
+                "request": [_content_to_serializable(c) for c in contents],
+                "response": [_part_to_serializable(p) for p in parts],
+            }
+        )
 
         thought_text = ""
         function_calls = []
@@ -187,7 +232,7 @@ def run_agent(user_query: str) -> list:
                     "final_answer": thought_text.strip() or "(empty response)",
                 }
             )
-            return events
+            return _agent_result(events, log_entries)
 
         # ---- Append the model's turn (text + function_calls) to history ----
         contents.append(candidate.content)
@@ -245,7 +290,19 @@ def run_agent(user_query: str) -> list:
             "error": f"Agent exceeded {MAX_TURNS} turns without finalizing.",
         }
     )
-    return events
+    return _agent_result(events, log_entries)
+
+
+def _agent_result(events, log_entries):
+    """Bundle events and log data into the standard return dict."""
+    return {
+        "events": events,
+        "log": {
+            "system_instruction": SYSTEM_INSTRUCTION,
+            "model": MODEL_NAME,
+            "turns": log_entries,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -261,8 +318,8 @@ def run():
     query = (request.json or {}).get("query", "").strip()
     if not query:
         return jsonify({"turns": [{"type": "error", "error": "Empty query"}]})
-    turns = run_agent(query)
-    return jsonify({"turns": turns})
+    result = run_agent(query)
+    return jsonify({"turns": result["events"], "log": result["log"]})
 
 
 if __name__ == "__main__":

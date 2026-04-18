@@ -1042,6 +1042,126 @@ body {
 }
 
 /* ============================================================
+   Run Tabs
+   ============================================================ */
+.run-tabs {
+  display: flex;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-xl);
+  border-bottom: 1px solid var(--border);
+}
+.run-tab {
+  padding: var(--sp-sm) var(--sp-md);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.run-tab:hover { color: var(--text-secondary); }
+.run-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ============================================================
+   Log Panel
+   ============================================================ */
+.log-panel {
+  animation: fadeIn 0.3s both;
+}
+.log-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-bottom: var(--sp-lg);
+}
+.log-turn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-md);
+  overflow: hidden;
+}
+.log-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-sm) var(--sp-md);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-sans);
+  color: var(--text);
+}
+.log-section-toggle:hover { background: var(--surface-2); }
+.log-section-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.log-section-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.log-section-body {
+  padding: var(--sp-sm) var(--sp-md) var(--sp-md);
+  border-top: 1px solid var(--border-light);
+}
+.log-pre {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  background: var(--surface-2);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-sm) var(--sp-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-sm);
+  overflow-x: auto;
+}
+.log-pre:last-child { margin-bottom: 0; }
+.log-role {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-bottom: var(--sp-xs);
+}
+.log-role-model { background: var(--accent-soft); color: var(--accent); }
+.log-role-user { background: rgba(77, 159, 255, 0.12); color: var(--info); }
+.log-fn-call { color: var(--accent); }
+.log-fn-resp { color: var(--info); }
+.log-msg-block {
+  margin-bottom: var(--sp-sm);
+  padding-bottom: var(--sp-sm);
+  border-bottom: 1px solid var(--border-light);
+}
+.log-msg-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.log-sys-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--sp-md);
+  overflow: hidden;
+}
+
+/* ============================================================
    Animations
    ============================================================ */
 .fade-in { animation: fadeIn 0.3s both; }
@@ -1396,6 +1516,7 @@ function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [history, setHistory] = useState(loadHistory);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [logData, setLogData] = useState(null);
   const [settings, setSettings] = useState({ theme: 'ink', hue: 340, density: 'comfortable' });
 
   useEffect(() => {
@@ -1427,6 +1548,7 @@ function App() {
       const { timeline: tl, finalData: fd } = adaptBackendResponse(data.turns || []);
       setTimeline(tl);
       setFinalData(fd);
+      setLogData(data.log || null);
       setView('run');
       const updated = saveToHistory(text, tl.length);
       setHistory(loadHistory());
@@ -1442,6 +1564,7 @@ function App() {
     setCurrentQuery('');
     setTimeline([]);
     setFinalData(null);
+    setLogData(null);
     setErrorMsg('');
   };
 
@@ -1476,6 +1599,7 @@ function App() {
               query={currentQuery}
               timeline={timeline}
               finalData={finalData}
+              logData={logData}
               onReset={handleReset}
             />
           )}
@@ -1639,13 +1763,15 @@ function ErrorView({ message, onReset }) {
 }
 
 /* -- Run View -- */
-function RunView({ query, timeline, finalData, onReset }) {
+function RunView({ query, timeline, finalData, logData, onReset }) {
   const [revealCount, setRevealCount] = useState(0);
   const [showFinal, setShowFinal] = useState(false);
+  const [activeTab, setActiveTab] = useState('timeline');
 
   useEffect(() => {
     setRevealCount(0);
     setShowFinal(false);
+    setActiveTab('timeline');
   }, [timeline]);
 
   useEffect(() => {
@@ -1666,12 +1792,28 @@ function RunView({ query, timeline, finalData, onReset }) {
         <span className="run-meta">{revealCount} of {timeline.length} steps</span>
         <button className="btn-reset" onClick={onReset}>{'\u2190'} New search</button>
       </div>
-      <div className="timeline">
-        {timeline.slice(0, revealCount).map((step, i) => (
-          <TurnBlock key={i} step={step} />
-        ))}
+      <div className="run-tabs">
+        <button
+          className={'run-tab' + (activeTab === 'timeline' ? ' active' : '')}
+          onClick={() => setActiveTab('timeline')}
+        >Timeline</button>
+        <button
+          className={'run-tab' + (activeTab === 'log' ? ' active' : '')}
+          onClick={() => setActiveTab('log')}
+        >Log</button>
       </div>
-      {showFinal && finalData && <FinalCard data={finalData} />}
+      {activeTab === 'timeline' ? (
+        <>
+          <div className="timeline">
+            {timeline.slice(0, revealCount).map((step, i) => (
+              <TurnBlock key={i} step={step} />
+            ))}
+          </div>
+          {showFinal && finalData && <FinalCard data={finalData} />}
+        </>
+      ) : (
+        <LogPanel logData={logData} />
+      )}
     </div>
   );
 }
@@ -1900,6 +2042,116 @@ function FinalCard({ data }) {
       </div>
     </div>
   );
+}
+
+/* -- Log Panel -- */
+function LogPanel({ logData }) {
+  const [sysOpen, setSysOpen] = useState(false);
+
+  if (!logData) {
+    return (
+      <div className="log-panel">
+        <div className="log-meta">No log data available for this run.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="log-panel">
+      <div className="log-meta">
+        Model: {logData.model} &middot; {(logData.turns || []).length} turn{(logData.turns || []).length !== 1 ? 's' : ''}
+      </div>
+
+      <div className="log-sys-block">
+        <button className="log-section-toggle" onClick={() => setSysOpen(!sysOpen)}>
+          <span className="log-section-label">System Instruction</span>
+          <span className="log-section-hint">{sysOpen ? '\u25BE' : '\u25B8'}</span>
+        </button>
+        {sysOpen && (
+          <div className="log-section-body">
+            <pre className="log-pre">{logData.system_instruction}</pre>
+          </div>
+        )}
+      </div>
+
+      {(logData.turns || []).map((turn, i) => (
+        <LogTurn key={i} turn={turn} />
+      ))}
+    </div>
+  );
+}
+
+/* -- Log Turn -- */
+function LogTurn({ turn }) {
+  const [reqOpen, setReqOpen] = useState(false);
+  const [respOpen, setRespOpen] = useState(true);
+  const reqCount = (turn.request || []).length;
+
+  return (
+    <div className="log-turn">
+      <div style={{ padding: 'var(--sp-sm) var(--sp-md)', borderBottom: '1px solid var(--border-light)', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--accent)', fontWeight: 600 }}>
+        Turn {turn.turn}
+      </div>
+
+      <button className="log-section-toggle" onClick={() => setReqOpen(!reqOpen)}>
+        <span className="log-section-label">Request</span>
+        <span className="log-section-hint">{reqCount} message{reqCount !== 1 ? 's' : ''} {reqOpen ? '\u25BE' : '\u25B8'}</span>
+      </button>
+      {reqOpen && (
+        <div className="log-section-body">
+          {(turn.request || []).map((msg, i) => (
+            <LogMessage key={i} msg={msg} index={i} />
+          ))}
+        </div>
+      )}
+
+      <button className="log-section-toggle" onClick={() => setRespOpen(!respOpen)}>
+        <span className="log-section-label">Response</span>
+        <span className="log-section-hint">{(turn.response || []).length} part{(turn.response || []).length !== 1 ? 's' : ''} {respOpen ? '\u25BE' : '\u25B8'}</span>
+      </button>
+      {respOpen && (
+        <div className="log-section-body">
+          {(turn.response || []).map((part, i) => (
+            <LogPart key={i} part={part} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -- Log Message -- */
+function LogMessage({ msg, index }) {
+  const roleClass = msg.role === 'model' ? 'log-role-model' : 'log-role-user';
+  return (
+    <div className="log-msg-block">
+      <span className={'log-role ' + roleClass}>[{index}] {msg.role}</span>
+      {(msg.parts || []).map((part, i) => (
+        <LogPart key={i} part={part} />
+      ))}
+    </div>
+  );
+}
+
+/* -- Log Part -- */
+function LogPart({ part }) {
+  if (part.type === 'text') {
+    return <pre className="log-pre">TEXT: {part.text}</pre>;
+  }
+  if (part.type === 'function_call') {
+    const argsStr = typeof part.args === 'object' ? JSON.stringify(part.args, null, 2) : String(part.args);
+    return (
+      <pre className="log-pre log-fn-call">FUNCTION_CALL: {part.name}({argsStr})</pre>
+    );
+  }
+  if (part.type === 'function_response') {
+    return (
+      <pre className="log-pre log-fn-resp">
+        FUNCTION_RESPONSE: {part.name} {'\u2192'} {part.response}{part.truncated ? ' [truncated]' : ''}
+      </pre>
+    );
+  }
+  return <pre className="log-pre">UNKNOWN PART</pre>;
 }
 
 /* -- Tweaks Panel -- */
