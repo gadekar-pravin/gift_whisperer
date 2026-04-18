@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Gift Whisperer — a multi-turn AI agent (Flask + Google Gemini 2.5 Flash) that finds personalized gift recommendations on Amazon India via RapidAPI.
+Gift Whisperer — a multi-turn AI agent (Flask + Google Gemini, default `gemini-flash-latest`) that finds personalized gift recommendations on Amazon India via RapidAPI.
 
 ## Setup
 
