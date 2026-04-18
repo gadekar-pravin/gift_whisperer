@@ -1156,6 +1156,109 @@ body {
 }
 
 /* ============================================================
+   Flow Diagram
+   ============================================================ */
+.flow-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-md);
+  overflow-x: auto;
+  animation: fadeIn 0.3s both;
+  position: relative;
+}
+.flow-empty {
+  text-align: center;
+  padding: var(--sp-2xl) var(--sp-lg);
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.flow-phase-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  fill: var(--text-muted);
+}
+.flow-node rect {
+  rx: 8;
+  ry: 8;
+  stroke-width: 1.5;
+  transition: filter 0.2s;
+}
+.flow-node:hover rect {
+  filter: brightness(1.15);
+}
+.flow-node { cursor: default; }
+.flow-node-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  fill: var(--text-secondary);
+  pointer-events: none;
+}
+.flow-node-icon {
+  font-size: 13px;
+  pointer-events: none;
+}
+.flow-edge {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.flow-edge-winner {
+  stroke-dasharray: none;
+  stroke-width: 2.5;
+  animation: flowPulse 2s linear infinite;
+}
+@keyframes flowPulse {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -20; }
+}
+.flow-edge-winner {
+  stroke-dasharray: 10 5;
+}
+.flow-tooltip {
+  position: fixed;
+  z-index: 300;
+  max-width: 280px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-sm) var(--sp-md);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}
+.flow-tooltip-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.flow-legend {
+  display: flex;
+  gap: var(--sp-lg);
+  padding: var(--sp-sm) var(--sp-md);
+  margin-top: var(--sp-sm);
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.flow-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+.flow-legend-swatch {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ============================================================
    Log Panel
    ============================================================ */
 .log-panel {
@@ -1581,6 +1684,184 @@ function adaptBackendResponse(backendTurns) {
 }
 
 /* ============================================================
+   Flow Diagram Builder
+   ============================================================ */
+const FLOW_PHASES = ['query', 'search', 'details', 'score', 'card', 'result'];
+const FLOW_PHASE_LABELS = { query: 'Query', search: 'Search', details: 'Details', score: 'Score', card: 'Card', result: 'Result' };
+const FLOW_PHASE_ICONS = { query: '\u{1F464}', search: '\u{1F50D}', details: '\u{1F4E6}', score: '\u{1F4CA}', card: '\u{2709}\u{FE0F}', result: '\u{1F3C6}' };
+
+const TOOL_TO_PHASE = {
+  search_amazon_india: 'search',
+  get_product_details: 'details',
+  calculate_value_score: 'score',
+  compose_gift_card_message: 'card',
+};
+
+function buildFlowGraph(timeline, finalData, query) {
+  const nodes = [];
+  const edges = [];
+  const byPhase = { query: [], search: [], details: [], score: [], card: [], result: [] };
+
+  // Query node
+  const qNode = { id: 'q0', phase: 'query', label: query.length > 20 ? query.slice(0, 18) + '\u2026' : query, fullLabel: query, icon: FLOW_PHASE_ICONS.query, winner: !!finalData, stepNum: null, thinking: '', args: null };
+  nodes.push(qNode);
+  byPhase.query.push(qNode);
+
+  // ASIN map: asin -> search node id (to connect search -> details)
+  const asinToSearchNode = {};
+  // Details nodes: asin -> details node id
+  const asinToDetailsNode = {};
+  // Score nodes by price: { price, nodeId }
+  const scoreNodesByPrice = [];
+  let cardNodeId = null;
+
+  for (const step of timeline) {
+    const phase = TOOL_TO_PHASE[step.tool];
+    if (!phase) continue;
+
+    const node = { id: 's' + step.stepNum, phase, stepNum: step.stepNum, thinking: step.thinking || '', args: step.args, result: step.result, winner: false };
+
+    if (phase === 'search') {
+      node.label = step.args && step.args.query ? '"' + (step.args.query.length > 14 ? step.args.query.slice(0, 12) + '\u2026' : step.args.query) + '"' : 'Search';
+      node.fullLabel = step.args && step.args.query ? step.args.query : 'Search';
+      node.icon = FLOW_PHASE_ICONS.search;
+      // Build asin map
+      if (step.result && step.result.kind === 'products') {
+        for (const p of (step.result.products || [])) {
+          if (p.asin) asinToSearchNode[p.asin] = node.id;
+        }
+      }
+      // Edge from query to this search
+      edges.push({ from: 'q0', to: node.id, winner: false });
+    } else if (phase === 'details') {
+      const title = step.result && step.result.kind === 'details' ? step.result.title : '';
+      node.label = title.length > 16 ? title.slice(0, 14) + '\u2026' : (title || 'Details');
+      node.fullLabel = title || 'Details';
+      node.icon = FLOW_PHASE_ICONS.details;
+      const asin = step.args && step.args.asin;
+      if (asin) asinToDetailsNode[asin] = node.id;
+      // Edge: search -> details (via ASIN)
+      if (asin && asinToSearchNode[asin]) {
+        edges.push({ from: asinToSearchNode[asin], to: node.id, winner: false });
+      }
+    } else if (phase === 'score') {
+      const overall = step.result && step.result.kind === 'score' ? step.result.overall : '?';
+      node.label = overall + '/100';
+      node.fullLabel = 'Score: ' + overall + '/100' + (step.result && step.result.verdict ? ' \u00B7 ' + step.result.verdict : '');
+      node.icon = FLOW_PHASE_ICONS.score;
+      const price = step.args ? step.args.price : 0;
+      const rating = step.args ? step.args.rating : 0;
+      scoreNodesByPrice.push({ price, rating, nodeId: node.id });
+      // Edge: details -> score (via price+rating matching)
+      for (const [asin, detNodeId] of Object.entries(asinToDetailsNode)) {
+        // Find matching detail step
+        const detStep = timeline.find(s => s.tool === 'get_product_details' && s.args && s.args.asin === asin);
+        if (detStep && detStep.result && detStep.result.kind === 'details') {
+          const dp = parsePrice(detStep.result.price);
+          if (Math.abs(dp - price) < 50) {
+            edges.push({ from: detNodeId, to: node.id, winner: false });
+            break;
+          }
+        }
+      }
+    } else if (phase === 'card') {
+      node.label = 'Gift Card';
+      node.fullLabel = step.result && step.result.kind === 'card' ? step.result.message.slice(0, 80) + '\u2026' : 'Gift Card';
+      node.icon = FLOW_PHASE_ICONS.card;
+      cardNodeId = node.id;
+      // Edge: score -> card (from winning/highest score)
+      if (scoreNodesByPrice.length > 0) {
+        // Connect from the best score or the one matching card product
+        const productTitle = step.args && step.args.product_title ? step.args.product_title.toLowerCase() : '';
+        let connectedScore = null;
+        if (productTitle) {
+          for (const sn of scoreNodesByPrice) {
+            // Find details that match this price and check title
+            for (const [asin, detNodeId] of Object.entries(asinToDetailsNode)) {
+              const detStep = timeline.find(s => s.tool === 'get_product_details' && s.args && s.args.asin === asin);
+              if (detStep && detStep.result && detStep.result.kind === 'details') {
+                const dp = parsePrice(detStep.result.price);
+                if (Math.abs(dp - sn.price) < 50 && detStep.result.title.toLowerCase().includes(productTitle.slice(0, 25))) {
+                  connectedScore = sn.nodeId;
+                  break;
+                }
+              }
+            }
+            if (connectedScore) break;
+          }
+        }
+        if (!connectedScore) connectedScore = scoreNodesByPrice[scoreNodesByPrice.length - 1].nodeId;
+        edges.push({ from: connectedScore, to: node.id, winner: false });
+      }
+    }
+
+    nodes.push(node);
+    byPhase[phase].push(node);
+  }
+
+  // Result node
+  if (finalData) {
+    const rNode = { id: 'r0', phase: 'result', label: 'Winner', fullLabel: finalData.title || 'Result', icon: FLOW_PHASE_ICONS.result, winner: true, stepNum: null, thinking: '', args: null };
+    nodes.push(rNode);
+    byPhase.result.push(rNode);
+    // Edge from card or best score to result
+    if (cardNodeId) {
+      edges.push({ from: cardNodeId, to: rNode.id, winner: false });
+    } else if (scoreNodesByPrice.length > 0) {
+      edges.push({ from: scoreNodesByPrice[scoreNodesByPrice.length - 1].nodeId, to: rNode.id, winner: false });
+    }
+  }
+
+  // Mark winner path: trace backward from result
+  if (finalData && finalData.type === 'structured' && finalData.asin) {
+    const winnerAsin = finalData.asin;
+    const winnerDetailsNodeId = asinToDetailsNode[winnerAsin];
+    const winnerSearchNodeId = asinToSearchNode[winnerAsin];
+    // Find winner score node via price
+    let winnerScoreNodeId = null;
+    const wp = parsePrice(finalData.price);
+    for (const sn of scoreNodesByPrice) {
+      if (Math.abs(sn.price - wp) < 50) { winnerScoreNodeId = sn.nodeId; break; }
+    }
+
+    const winnerNodeIds = new Set(['q0', winnerSearchNodeId, winnerDetailsNodeId, winnerScoreNodeId, cardNodeId, 'r0'].filter(Boolean));
+    for (const n of nodes) {
+      if (winnerNodeIds.has(n.id)) n.winner = true;
+    }
+    for (const e of edges) {
+      if (winnerNodeIds.has(e.from) && winnerNodeIds.has(e.to)) e.winner = true;
+    }
+  }
+
+  // Compute positions: column-based layout
+  const colWidth = 160;
+  const nodeW = 130;
+  const nodeH = 44;
+  const padX = 40;
+  const padY = 50;
+
+  for (let pi = 0; pi < FLOW_PHASES.length; pi++) {
+    const phase = FLOW_PHASES[pi];
+    const col = byPhase[phase];
+    const x = padX + pi * colWidth;
+    const totalH = col.length * nodeH + (col.length - 1) * 16;
+    const startY = padY + Math.max(0, (120 - totalH) / 2);
+    for (let ni = 0; ni < col.length; ni++) {
+      col[ni].x = x;
+      col[ni].y = startY + ni * (nodeH + 16);
+      col[ni].w = nodeW;
+      col[ni].h = nodeH;
+    }
+  }
+
+  const svgW = padX * 2 + (FLOW_PHASES.length - 1) * colWidth + nodeW;
+  const maxNodes = Math.max(...Object.values(byPhase).map(a => a.length), 1);
+  const svgH = padY + maxNodes * (nodeH + 16) + 30;
+
+  return { nodes, edges, svgW, svgH, byPhase };
+}
+
+/* ============================================================
    Components
    ============================================================ */
 
@@ -1942,6 +2223,134 @@ function ErrorView({ message, onReset }) {
   );
 }
 
+/* -- Flow Diagram -- */
+function FlowDiagram({ timeline, finalData, query, isStreaming }) {
+  const [tooltip, setTooltip] = useState(null);
+
+  const graph = useMemo(
+    () => timeline.length > 0 ? buildFlowGraph(timeline, finalData, query) : null,
+    [timeline, finalData, query]
+  );
+
+  if (!graph || graph.nodes.length <= 1) {
+    return (
+      <div className="flow-container">
+        <div className="flow-empty">
+          {isStreaming ? 'Flow diagram will appear after the first tool call\u2026' : 'No tool calls to visualize.'}
+        </div>
+      </div>
+    );
+  }
+
+  const { nodes, edges, svgW, svgH, byPhase } = graph;
+
+  const handleMouseEnter = (e, node) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    let detail = '';
+    if (node.thinking) detail += node.thinking.slice(0, 120) + (node.thinking.length > 120 ? '\u2026' : '');
+    if (node.args) {
+      const argsStr = Object.entries(node.args).map(([k, v]) => k + ': ' + (typeof v === 'string' ? v.slice(0, 40) : v)).join(', ');
+      if (detail) detail += '\n';
+      detail += argsStr;
+    }
+    setTooltip({ x: rect.right + 8, y: rect.top, title: node.fullLabel || node.label, detail });
+  };
+
+  const handleMouseLeave = () => setTooltip(null);
+
+  return (
+    <div className="flow-container">
+      <svg width={svgW} height={svgH} style={{ display: 'block', minWidth: svgW }}>
+        <defs>
+          <marker id="flow-arrow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="var(--text-muted)" />
+          </marker>
+          <marker id="flow-arrow-accent" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="var(--accent)" />
+          </marker>
+        </defs>
+
+        {/* Phase column labels */}
+        {FLOW_PHASES.map((phase, i) => {
+          if (byPhase[phase].length === 0) return null;
+          const x = byPhase[phase][0].x + byPhase[phase][0].w / 2;
+          return (
+            <text key={phase} x={x} y={20} textAnchor="middle" className="flow-phase-label">
+              {FLOW_PHASE_LABELS[phase]}
+            </text>
+          );
+        })}
+
+        {/* Edges */}
+        {edges.map((edge, i) => {
+          const fromNode = nodes.find(n => n.id === edge.from);
+          const toNode = nodes.find(n => n.id === edge.to);
+          if (!fromNode || !toNode) return null;
+          const x1 = fromNode.x + fromNode.w;
+          const y1 = fromNode.y + fromNode.h / 2;
+          const x2 = toNode.x;
+          const y2 = toNode.y + toNode.h / 2;
+          const dx = (x2 - x1) * 0.4;
+          const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+          return (
+            <path
+              key={i}
+              d={d}
+              className={'flow-edge' + (edge.winner ? ' flow-edge-winner' : '')}
+              stroke={edge.winner ? 'var(--accent)' : 'var(--border)'}
+              markerEnd={edge.winner ? 'url(#flow-arrow-accent)' : 'url(#flow-arrow)'}
+            />
+          );
+        })}
+
+        {/* Nodes */}
+        {nodes.map((node) => {
+          const isError = node.result && node.result.kind === 'error';
+          let stroke = node.winner ? 'var(--accent)' : 'var(--border)';
+          let fill = node.winner ? 'var(--accent-soft)' : 'var(--surface-2)';
+          if (isError) { stroke = '#ff5555'; fill = 'rgba(255,77,77,0.08)'; }
+
+          return (
+            <g
+              key={node.id}
+              className="flow-node"
+              transform={`translate(${node.x}, ${node.y})`}
+              onMouseEnter={(e) => handleMouseEnter(e, node)}
+              onMouseLeave={handleMouseLeave}
+            >
+              <rect width={node.w} height={node.h} fill={fill} stroke={stroke} />
+              <text x={20} y={node.h / 2 + 1} dominantBaseline="middle" className="flow-node-icon">{node.icon}</text>
+              <text x={38} y={node.h / 2 + 1} dominantBaseline="middle" className="flow-node-label">
+                {node.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div className="flow-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          <div className="flow-tooltip-title">{tooltip.title}</div>
+          {tooltip.detail && <div style={{ whiteSpace: 'pre-wrap' }}>{tooltip.detail}</div>}
+        </div>
+      )}
+
+      {/* Legend */}
+      <div className="flow-legend">
+        <div className="flow-legend-item">
+          <div className="flow-legend-swatch" style={{ background: 'var(--accent)' }} />
+          <span>Winner path</span>
+        </div>
+        <div className="flow-legend-item">
+          <div className="flow-legend-swatch" style={{ background: 'var(--border)', borderTop: '1.5px dashed var(--text-muted)' }} />
+          <span>Other paths</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* -- Run View -- */
 function RunView({ query, timeline, finalData, logData, cached, isStreaming, onReset, onRerun }) {
   const [revealCount, setRevealCount] = useState(0);
@@ -1981,6 +2390,10 @@ function RunView({ query, timeline, finalData, logData, cached, isStreaming, onR
           onClick={() => setActiveTab('timeline')}
         >Timeline</button>
         <button
+          className={'run-tab' + (activeTab === 'flow' ? ' active' : '')}
+          onClick={() => setActiveTab('flow')}
+        >Flow</button>
+        <button
           className={'run-tab' + (activeTab === 'log' ? ' active' : '')}
           onClick={() => setActiveTab('log')}
         >Log{isStreaming && <span className="live-dot" />}</button>
@@ -2002,6 +2415,8 @@ function RunView({ query, timeline, finalData, logData, cached, isStreaming, onR
           )}
           {showFinal && finalData && <FinalCard data={finalData} />}
         </>
+      ) : activeTab === 'flow' ? (
+        <FlowDiagram timeline={timeline} finalData={finalData} query={query} isStreaming={isStreaming} />
       ) : (
         <LogPanel logData={logData} isStreaming={isStreaming} />
       )}
