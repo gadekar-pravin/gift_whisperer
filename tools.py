@@ -11,8 +11,8 @@ Each tool has (a) the Python function, (b) a Gemini FunctionDeclaration schema.
 
 import inspect
 import logging
-import os
 import math
+import os
 import requests
 
 from google import genai
@@ -20,11 +20,17 @@ from google.genai import types
 
 log = logging.getLogger(__name__)
 
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "")
 RAPIDAPI_HOST = "real-time-amazon-data.p.rapidapi.com"
 RAPIDAPI_BASE = f"https://{RAPIDAPI_HOST}"
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+
+
+def _get_runtime_config() -> dict[str, str]:
+    """Read environment-backed configuration at call time."""
+    return {
+        "rapidapi_key": os.environ.get("RAPIDAPI_KEY", ""),
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
+        "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-flash-latest"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -90,12 +96,16 @@ def _check_rapidapi_quota() -> str | None:
 # ---------------------------------------------------------------------------
 def check_gemini_connectivity() -> None:
     """Verify Gemini API key works. Raises RuntimeError on failure."""
-    if not GEMINI_API_KEY:
+    config = _get_runtime_config()
+    gemini_api_key = config["gemini_api_key"]
+    gemini_model = config["gemini_model"]
+
+    if not gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY is not set.")
     try:
-        test_client = genai.Client(api_key=GEMINI_API_KEY)
+        test_client = genai.Client(api_key=gemini_api_key)
         test_client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=gemini_model,
             contents="Say OK",
             config=types.GenerateContentConfig(
                 max_output_tokens=5,
@@ -104,17 +114,19 @@ def check_gemini_connectivity() -> None:
         )
     except Exception as e:
         raise RuntimeError(
-            f"Gemini connectivity check failed (model={GEMINI_MODEL}): {e}"
+            f"Gemini connectivity check failed (model={gemini_model}): {e}"
         ) from e
 
 
 def check_rapidapi_connectivity() -> None:
     """Verify RapidAPI key works with a lightweight call. Raises RuntimeError on failure."""
-    if not RAPIDAPI_KEY:
+    rapidapi_key = _get_runtime_config()["rapidapi_key"]
+
+    if not rapidapi_key:
         raise RuntimeError("RAPIDAPI_KEY is not set.")
     url = f"{RAPIDAPI_BASE}/search"
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Key": rapidapi_key,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
     }
     # Cheapest possible call — 1 result for a common query.
@@ -181,9 +193,10 @@ def search_amazon_india(
     if quota_err:
         return {"error": quota_err}
 
+    rapidapi_key = _get_runtime_config()["rapidapi_key"]
     url = f"{RAPIDAPI_BASE}/search"
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Key": rapidapi_key,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
     }
     params = {
@@ -241,9 +254,10 @@ def get_product_details(asin: str) -> dict:
     if quota_err:
         return {"error": quota_err}
 
+    rapidapi_key = _get_runtime_config()["rapidapi_key"]
     url = f"{RAPIDAPI_BASE}/product-details"
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Key": rapidapi_key,
         "X-RapidAPI-Host": RAPIDAPI_HOST,
     }
     params = {"asin": asin, "country": "IN"}
@@ -351,7 +365,11 @@ def compose_gift_card_message(
     """
     Use a secondary Gemini call to write a short personalized card message.
     """
-    if not GEMINI_API_KEY:
+    config = _get_runtime_config()
+    gemini_api_key = config["gemini_api_key"]
+    gemini_model = config["gemini_model"]
+
+    if not gemini_api_key:
         return {"error": "GEMINI_API_KEY not configured"}
 
     prompt = f"""Write a short (3-4 sentences), {tone} handwritten-style gift card message.
@@ -371,9 +389,9 @@ Return ONLY the message text. No preamble, no quotes around it.
 """
 
     try:
-        sub_client = genai.Client(api_key=GEMINI_API_KEY)
+        sub_client = genai.Client(api_key=gemini_api_key)
         response = sub_client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=gemini_model,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.8),
         )
