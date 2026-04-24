@@ -15,8 +15,11 @@ requirement.
 """
 
 import hashlib
+import logging
 import os
 import json
+import random
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -28,12 +31,14 @@ from dotenv import load_dotenv
 from tools import (
     TOOL_REGISTRY,
     TOOL_DECLARATIONS,
+    _is_retryable_gemini_error,
     check_gemini_connectivity,
     check_rapidapi_connectivity,
-    gemini_generate_with_retry,
     get_rapidapi_usage,
     validate_tool_args,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -218,22 +223,53 @@ def run_agent_streaming(user_query: str):
     }
 
     for turn_num in range(1, MAX_TURNS + 1):
-        # ---- Call Gemini with ALL accumulated context ----
-        try:
-            response = gemini_generate_with_retry(
-                client,
-                model=MODEL_NAME,
-                contents=contents,
-                config=config,
-            )
-        except Exception as e:
-            yield {
-                "kind": "turn",
-                "event": {"type": "error", "error": f"Gemini call failed: {e}"},
-                "log_entry": None,
-            }
-            yield {"kind": "done"}
-            return
+        # ---- Call Gemini with ALL accumulated context (with streaming-safe retry) ----
+        _MAX_GEMINI_ATTEMPTS = 6
+        response = None
+        for attempt in range(1, _MAX_GEMINI_ATTEMPTS + 1):
+            try:
+                response = client.models.generate_content(
+                    model=MODEL_NAME,
+                    contents=contents,
+                    config=config,
+                )
+                break
+            except Exception as e:
+                if not _is_retryable_gemini_error(e):
+                    yield {
+                        "kind": "turn",
+                        "event": {"type": "error", "error": f"Gemini call failed: {e}"},
+                        "log_entry": None,
+                    }
+                    yield {"kind": "done"}
+                    return
+                if attempt == _MAX_GEMINI_ATTEMPTS:
+                    yield {
+                        "kind": "turn",
+                        "event": {
+                            "type": "error",
+                            "error": f"Gemini call failed after {_MAX_GEMINI_ATTEMPTS} attempts: {e}",
+                        },
+                        "log_entry": None,
+                    }
+                    yield {"kind": "done"}
+                    return
+                wait = min(60, 4 * (2 ** (attempt - 1))) + random.uniform(0, 2)
+                log.warning(
+                    "Gemini call failed (attempt %d/%d), retrying in %.0fs: %s",
+                    attempt,
+                    _MAX_GEMINI_ATTEMPTS,
+                    wait,
+                    e,
+                )
+                yield {
+                    "kind": "retry",
+                    "attempt": attempt,
+                    "max_attempts": _MAX_GEMINI_ATTEMPTS,
+                    "wait_seconds": round(wait, 1),
+                    "error": str(e),
+                }
+                time.sleep(wait)
 
         log_turn(turn_num, contents, response)
 

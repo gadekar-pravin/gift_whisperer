@@ -106,7 +106,7 @@ def _is_retryable_gemini_error(exc: BaseException) -> bool:
 
 def _log_gemini_retry(retry_state: tenacity.RetryCallState) -> None:
     log.warning(
-        "Gemini call failed (attempt %d/4), retrying: %s",
+        "Gemini call failed (attempt %d/6), retrying: %s",
         retry_state.attempt_number,
         retry_state.outcome.exception(),
     )
@@ -114,9 +114,9 @@ def _log_gemini_retry(retry_state: tenacity.RetryCallState) -> None:
 
 _gemini_retryer = tenacity.Retrying(
     retry=tenacity.retry_if_exception(_is_retryable_gemini_error),
-    wait=tenacity.wait_exponential(multiplier=1, min=2, max=10)
-    + tenacity.wait_random(0, 1),
-    stop=tenacity.stop_after_attempt(4),
+    wait=tenacity.wait_exponential(multiplier=2, min=4, max=60)
+    + tenacity.wait_random(0, 2),
+    stop=tenacity.stop_after_attempt(6),
     before_sleep=_log_gemini_retry,
     reraise=True,
 )
