@@ -3,6 +3,12 @@
 A multi-turn AI agent that finds the perfect gift on Amazon India.
 Built for the Agentic AI course assignment.
 
+## Demo
+
+[![Watch the demo](https://img.youtube.com/vi/RGsAcvnD06Q/maxresdefault.jpg)](https://youtu.be/RGsAcvnD06Q)
+
+> Click the image above to watch the full demo on YouTube.
+
 ## What it does
 
 You describe a recipient, occasion, and budget. The agent:
