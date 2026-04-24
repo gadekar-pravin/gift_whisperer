@@ -24,7 +24,6 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, Response
-from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
@@ -34,6 +33,7 @@ from tools import (
     _is_retryable_gemini_error,
     check_gemini_connectivity,
     check_rapidapi_connectivity,
+    create_genai_client,
     get_rapidapi_usage,
     validate_tool_args,
 )
@@ -73,14 +73,33 @@ RULES:
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 
-if not os.environ.get("GEMINI_API_KEY"):
+_gemini_backend = os.environ.get("GEMINI_BACKEND", "aistudio").lower().strip()
+if _gemini_backend not in ("aistudio", "vertexai"):
     raise SystemExit(
-        "Missing GEMINI_API_KEY — copy .env.example to .env and fill it in."
+        f"Invalid GEMINI_BACKEND={_gemini_backend!r} — must be 'aistudio' or 'vertexai'."
     )
+
+if _gemini_backend == "vertexai":
+    if not os.environ.get("GOOGLE_CLOUD_PROJECT"):
+        raise SystemExit(
+            "Missing GOOGLE_CLOUD_PROJECT — required when GEMINI_BACKEND=vertexai."
+        )
+    _location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+    log.info(
+        "Using Vertex AI backend (project=%s, location=%s)",
+        os.environ["GOOGLE_CLOUD_PROJECT"],
+        _location,
+    )
+else:
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise SystemExit(
+            "Missing GEMINI_API_KEY — copy .env.example to .env and fill it in."
+        )
+
 if not os.environ.get("RAPIDAPI_KEY"):
     raise SystemExit("Missing RAPIDAPI_KEY — copy .env.example to .env and fill it in.")
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+client = create_genai_client()
 
 # ---------------------------------------------------------------------------
 # Connectivity pre-checks — fail fast with actionable errors

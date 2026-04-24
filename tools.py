@@ -26,13 +26,41 @@ RAPIDAPI_HOST = "real-time-amazon-data.p.rapidapi.com"
 RAPIDAPI_BASE = f"https://{RAPIDAPI_HOST}"
 
 
+_DEFAULT_MODELS = {
+    "aistudio": "gemini-flash-latest",
+    "vertexai": "gemini-2.5-flash",
+}
+
+
 def _get_runtime_config() -> dict[str, str]:
     """Read environment-backed configuration at call time."""
+    backend = os.environ.get("GEMINI_BACKEND", "aistudio").lower().strip()
     return {
         "rapidapi_key": os.environ.get("RAPIDAPI_KEY", ""),
         "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
-        "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-flash-latest"),
+        "gemini_model": os.environ.get(
+            "GEMINI_MODEL", _DEFAULT_MODELS.get(backend, "gemini-flash-latest")
+        ),
+        "gemini_backend": backend,
     }
+
+
+def create_genai_client() -> genai.Client:
+    """Create a genai.Client for the configured backend (AI Studio or Vertex AI)."""
+    backend = _get_runtime_config()["gemini_backend"]
+    if backend == "vertexai":
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+        if not project:
+            raise ValueError(
+                "GOOGLE_CLOUD_PROJECT must be set when GEMINI_BACKEND=vertexai"
+            )
+        return genai.Client(vertexai=True, project=project, location=location)
+    # AI Studio (default)
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY must be set when using AI Studio backend")
+    return genai.Client(api_key=api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -139,27 +167,25 @@ def gemini_generate_with_retry(client, *, model, contents, config):
 # Connectivity pre-checks (called once at startup)
 # ---------------------------------------------------------------------------
 def check_gemini_connectivity() -> None:
-    """Verify Gemini API key works. Raises RuntimeError on failure."""
+    """Verify Gemini credentials work. Raises RuntimeError on failure."""
     config = _get_runtime_config()
-    gemini_api_key = config["gemini_api_key"]
     gemini_model = config["gemini_model"]
+    backend = config["gemini_backend"]
 
-    if not gemini_api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set.")
     try:
-        test_client = genai.Client(api_key=gemini_api_key)
+        test_client = create_genai_client()
         gemini_generate_with_retry(
             test_client,
             model=gemini_model,
             contents="Say OK",
             config=types.GenerateContentConfig(
-                max_output_tokens=5,
+                max_output_tokens=50,
                 temperature=0.0,
             ),
         )
     except Exception as e:
         raise RuntimeError(
-            f"Gemini connectivity check failed (model={gemini_model}): {e}"
+            f"Gemini connectivity check failed (backend={backend}, model={gemini_model}): {e}"
         ) from e
 
 
@@ -410,12 +436,7 @@ def compose_gift_card_message(
     """
     Use a secondary Gemini call to write a short personalized card message.
     """
-    config = _get_runtime_config()
-    gemini_api_key = config["gemini_api_key"]
-    gemini_model = config["gemini_model"]
-
-    if not gemini_api_key:
-        return {"error": "GEMINI_API_KEY not configured"}
+    gemini_model = _get_runtime_config()["gemini_model"]
 
     prompt = f"""Write a short (3-4 sentences), {tone} handwritten-style gift card message.
 
@@ -434,7 +455,7 @@ Return ONLY the message text. No preamble, no quotes around it.
 """
 
     try:
-        sub_client = genai.Client(api_key=gemini_api_key)
+        sub_client = create_genai_client()
         response = gemini_generate_with_retry(
             sub_client,
             model=gemini_model,

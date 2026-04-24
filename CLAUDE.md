@@ -9,17 +9,25 @@ Gift Whisperer — a multi-turn AI agent (Flask + Google Gemini, default `gemini
 ## Setup
 
 ```bash
-cp .env.example .env   # fill in GEMINI_API_KEY and RAPIDAPI_KEY
+cp .env.example .env   # fill in keys for your chosen backend
 uv sync                # install all dependencies (including dev)
 uv run python app.py   # serves at http://127.0.0.1:5000
 ```
 
 ## Required Environment Variables
 
-- `GEMINI_API_KEY` — Google AI Studio key (free tier)
 - `RAPIDAPI_KEY` — RapidAPI Real-Time Amazon Data key (free tier, ~500 requests/month)
+- `GEMINI_BACKEND` — `"aistudio"` (default) or `"vertexai"`
 
-Both loaded via `python-dotenv`. App exits on startup if either is missing.
+**AI Studio backend** (default):
+- `GEMINI_API_KEY` — Google AI Studio key (free tier)
+
+**Vertex AI backend** (`GEMINI_BACKEND=vertexai`):
+- `GOOGLE_CLOUD_PROJECT` — GCP project ID (required)
+- `GOOGLE_CLOUD_LOCATION` — GCP region (optional, defaults to `us-central1`)
+- Auth via Application Default Credentials (`gcloud auth application-default login`)
+
+All loaded via `python-dotenv`. App exits on startup if required variables are missing.
 
 ## RapidAPI Quota
 
