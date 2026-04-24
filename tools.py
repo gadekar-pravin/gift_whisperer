@@ -15,8 +15,10 @@ import math
 import os
 import requests
 
+import tenacity
 from google import genai
 from google.genai import types
+from google.genai.errors import ClientError, ServerError
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +94,48 @@ def _check_rapidapi_quota() -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Gemini retry helper
+# ---------------------------------------------------------------------------
+def _is_retryable_gemini_error(exc: BaseException) -> bool:
+    if isinstance(exc, ServerError):
+        return True
+    if isinstance(exc, ClientError) and exc.code == 429:
+        return True
+    return False
+
+
+def _log_gemini_retry(retry_state: tenacity.RetryCallState) -> None:
+    log.warning(
+        "Gemini call failed (attempt %d/4), retrying: %s",
+        retry_state.attempt_number,
+        retry_state.outcome.exception(),
+    )
+
+
+_gemini_retryer = tenacity.Retrying(
+    retry=tenacity.retry_if_exception(_is_retryable_gemini_error),
+    wait=tenacity.wait_exponential(multiplier=1, min=2, max=10)
+    + tenacity.wait_random(0, 1),
+    stop=tenacity.stop_after_attempt(4),
+    before_sleep=_log_gemini_retry,
+    reraise=True,
+)
+
+
+def gemini_generate_with_retry(client, *, model, contents, config):
+    """Call generate_content with retry on transient 503/429 errors."""
+
+    def _call():
+        return client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+
+    return _gemini_retryer(_call)
+
+
+# ---------------------------------------------------------------------------
 # Connectivity pre-checks (called once at startup)
 # ---------------------------------------------------------------------------
 def check_gemini_connectivity() -> None:
@@ -104,7 +148,8 @@ def check_gemini_connectivity() -> None:
         raise RuntimeError("GEMINI_API_KEY is not set.")
     try:
         test_client = genai.Client(api_key=gemini_api_key)
-        test_client.models.generate_content(
+        gemini_generate_with_retry(
+            test_client,
             model=gemini_model,
             contents="Say OK",
             config=types.GenerateContentConfig(
@@ -390,7 +435,8 @@ Return ONLY the message text. No preamble, no quotes around it.
 
     try:
         sub_client = genai.Client(api_key=gemini_api_key)
-        response = sub_client.models.generate_content(
+        response = gemini_generate_with_retry(
+            sub_client,
             model=gemini_model,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.8),

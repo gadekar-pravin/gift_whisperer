@@ -30,6 +30,7 @@ from tools import (
     TOOL_DECLARATIONS,
     check_gemini_connectivity,
     check_rapidapi_connectivity,
+    gemini_generate_with_retry,
     get_rapidapi_usage,
     validate_tool_args,
 )
@@ -219,7 +220,8 @@ def run_agent_streaming(user_query: str):
     for turn_num in range(1, MAX_TURNS + 1):
         # ---- Call Gemini with ALL accumulated context ----
         try:
-            response = client.models.generate_content(
+            response = gemini_generate_with_retry(
+                client,
                 model=MODEL_NAME,
                 contents=contents,
                 config=config,
